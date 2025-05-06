@@ -3,25 +3,15 @@ import SimpleCardWrapper from "@/components/SimpleCardWrapper.vue";
 import {ref} from "vue";
 import draggable from "vuedraggable";
 
-const waypoints = ref([{
-  depth: 50,
-  pause_duration: 3,
-  id:0
-},{
-  depth: 245,
-  pause_duration: 3,
-  id:1
-},{
-  depth: 27,
-  pause_duration: 3,
-  id:2
-},
+const waypoints = ref([
 
 ])
 </script>
 
 <template>
-<SimpleCardWrapper>
+<SimpleCardWrapper
+  style="min-height: 400px"
+>
   <div
     class="d-flex align-center ga-2 pa-0 flex-0-0"
   >
