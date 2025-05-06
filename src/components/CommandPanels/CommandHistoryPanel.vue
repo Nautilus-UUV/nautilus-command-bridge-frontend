@@ -1,69 +1,13 @@
 <script setup lang="ts">
 import SimpleCardWrapper from "@/components/SimpleCardWrapper.vue";
-import {ref} from "vue";
 import { DateTime } from "luxon";
+import {useCommandStore} from "@/store/commands";
+import {storeToRefs} from "pinia";
 
-type CommandTypes = 'Mission_Profile' | 'Start' | 'Stop' | 'Pause' | 'Abort'
-type CommandStatus = 'queued' | 'acknowledged' | 'failed'
-interface Command {
-  command_id: string,
-  command: CommandTypes,
-  status: CommandStatus,
-  send_retries: number,
-  last_send_time: string,
-}
+const commandStore = useCommandStore();
+const {commands} = storeToRefs(commandStore);
+const {extendedLoad} = commandStore;
 
-const commands = ref<Command[]>([
-  {
-    command_id: '1',
-    command: 'Mission_Profile',
-    send_retries: 3,
-    last_send_time: '2025-05-06T19:28:32Z',
-    status: 'queued',
-  },
-  {
-    command_id: '2',
-    command: 'Start',
-    send_retries: 1,
-    last_send_time: '2025-05-06T19:28:32Z',
-    status: 'acknowledged',
-  },
-  {
-    command_id: '3',
-    command: 'Stop',
-    send_retries: 0,
-    last_send_time: '2025-05-06T19:28:32Z',
-    status: 'failed',
-  },
-  {
-    command_id: '4',
-    command: 'Pause',
-    send_retries: 2,
-    last_send_time: '2025-05-06T19:28:32Z',
-    status: 'queued',
-  },
-  {
-    command_id: '5',
-    command: 'Abort',
-    send_retries: 1,
-    last_send_time: '2025-05-06T19:28:32Z',
-    status: 'acknowledged',
-  },
-  {
-    command_id: '6',
-    command: 'Mission_Profile',
-    send_retries: 11,
-    last_send_time: '2025-05-06T19:28:32Z',
-    status: 'queued',
-  },
-  {
-    command_id: '7',
-    command: 'Start',
-    send_retries: 1,
-    last_send_time: '2025-05-06T19:28:32Z',
-    status: 'acknowledged',
-  },
-]);
 </script>
 
 <template>
@@ -71,6 +15,18 @@ const commands = ref<Command[]>([
   title="Command History"
 >
   <div
+    v-if="!commands"
+    class="d-flex align-center justify-center"
+  >
+    <v-progress-circular
+      indeterminate
+      color="primary"
+      size="40"
+      width="4"
+    />
+  </div>
+  <div
+    v-else
     class="flex-1-1 position-relative"
   >
     <v-list
@@ -80,6 +36,7 @@ const commands = ref<Command[]>([
       <v-infinite-scroll
         mode="manual"
         class="h-100"
+        @load="extendedLoad"
       >
         <template
           v-for="(command, index) in commands"
@@ -132,7 +89,7 @@ const commands = ref<Command[]>([
                   variant="outlined"
                   density="comfortable"
                 >
-                  {{ DateTime.fromISO(command.last_send_time, {zone: 'system'}).toFormat('HH:mm:ss') }}
+                  {{ DateTime.fromISO(command.last_update_datetime, {zone: 'system'}).toFormat('HH:mm:ss') }}
                 </v-chip>
               </template>
             </v-list-item>

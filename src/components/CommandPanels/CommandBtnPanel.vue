@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import SimpleCardWrapper from "@/components/SimpleCardWrapper.vue";
+import {sendCommand} from "@/store/commands";
 </script>
 
 <template>
@@ -27,14 +28,16 @@ import SimpleCardWrapper from "@/components/SimpleCardWrapper.vue";
     <v-btn
       variant="outlined"
       prepend-icon="mdi-play"
+      @click="sendCommand('Start')"
     >
       Start
     </v-btn>
     <v-btn
       variant="outlined"
-      prepend-icon="mdi-pause"
+      prepend-icon="mdi-stop"
+      @click="sendCommand('Stop')"
     >
-      Pause
+      Stop
     </v-btn>
   </div>
   <div
@@ -44,6 +47,7 @@ import SimpleCardWrapper from "@/components/SimpleCardWrapper.vue";
       color="error"
       prepend-icon="mdi-exit-run"
       size="x-large"
+      @click="sendCommand('Abort')"
     >
       ABORT
     </v-btn>

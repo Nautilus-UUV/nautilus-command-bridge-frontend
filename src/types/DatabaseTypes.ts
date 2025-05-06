@@ -1,5 +1,6 @@
 export interface DatabaseLog {
   record_datetime: string; // ISO 8601
+  log_id: string; // MongoDB ObjectId
 }
 
 export interface DepthLog extends DatabaseLog {
