@@ -11,6 +11,7 @@ import {
 } from 'chart.js'
 import {useDataLogStore} from "@/store/datalogs";
 import {storeToRefs} from "pinia";
+import {LineChart} from "vue-chart-3";
 
 Chart.register(LineController, LineElement, PointElement, LinearScale, Title, CategoryScale)
 
@@ -26,58 +27,58 @@ const bladderPressure = computed(() => dataLogs.value.pressures.find(p => p.loca
 const latestLeakage = computed(() => dataLogs.value.leakages?.[0]?.has_leak ?? false)
 const latestAlive = computed(() => dataLogs.value.alives?.[0]?.is_alive ?? false)
 
-let chartInstance: Chart | null = null
+// Use newest 30 datapoints from the data log
+const depthData = computed<number[]>(() => {
+  const depths = dataLogs.value.depths?.slice(0, 30) ?? []
+  return depths.map(d => -d.depth) // Invert depth for chart
+});
 
-onMounted(() => {
-  const ctx = document.getElementById('depthChart') as HTMLCanvasElement
-  if (!ctx) return
-  const labels = Array.from({ length: 31 }, (_, i) => i.toString())
-  const depthData = [0, 3, 10, 8, 10, 12, 11, 15, 14, 9, 17, 22, 23, 22, 25, 28, 30, 30, 29, 28, 30, 30, 27, 23, 20, 15, 12, 6, 8, 2, 0].slice(0, 31)
+// Set indexes for the x-axis
+const labels = computed<number[]>(() => {
+  return depthData.value.map((_, index) => index)
+});
 
-  chartInstance = new Chart(ctx, {
-    type: 'line',
-    data: {
-      labels,
-      datasets: [
-        {
-          label: 'Depth (m)',
-          data: depthData,
-          borderColor: 'black',
-          backgroundColor: 'rgba(0,0,255,0.2)',
-          fill: false,
-          tension: 0.2
-        }
-      ]
-    },
-    options: {
-      scales: {
-        x: {
-          min: 0,
-          max: 30,
-          ticks: {
-            stepSize: 5
-          },
-          title: {
-            display: true,
-            text: 'Time'
-          }
-        },
-        y: {
-          min: 0,
-          max: 30,
-          ticks: {
-            stepSize: 5
-          },
-          title: {
-            display: true,
-            text: 'Depth'
-          }
-        }
-      },
-      responsive: false
-    }
-  })
+const chartData = computed(() => {
+  return {
+    labels: labels.value,
+    datasets: [{
+      label: 'Depth (m)',
+      data: depthData.value,
+      borderColor: 'black',
+      backgroundColor: 'rgba(0,0,255,0.2)',
+      fill: false,
+      tension: 0.2
+    }]
+  }
 })
+
+const chartOptions = ref({
+  scales: {
+    x: {
+      min: 0,
+      max: 30,
+      ticks: {
+        stepSize: 5
+      },
+      title: {
+        display: true,
+        text: 'Time'
+      }
+    },
+    y: {
+      min: 0,
+      max: 30,
+      ticks: {
+        stepSize: 5
+      },
+      title: {
+        display: true,
+        text: 'Depth'
+      }
+    }
+  },
+  responsive: true
+});
 </script>
 
 <template>
@@ -115,7 +116,11 @@ onMounted(() => {
     </div>
 
     <div class="chart-container">
-      <canvas id="depthChart" width="560" height="420"></canvas>
+      <LineChart
+        :chartData="chartData"
+        style="width: 560px; height: 420px;"
+        :options="chartOptions"
+      />
     </div>
   </div>
 </template>
