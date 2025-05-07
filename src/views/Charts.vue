@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import {AliveLog, DepthLog, LeakageLog, PoseLog, PressureLog} from '@/types/DatabaseTypes'
 import {
   Chart,
   LineController,
@@ -10,36 +9,22 @@ import {
   Title,
   CategoryScale
 } from 'chart.js'
+import {useDataLogStore} from "@/store/datalogs";
+import {storeToRefs} from "pinia";
 
 Chart.register(LineController, LineElement, PointElement, LinearScale, Title, CategoryScale)
 
-const subData = ref<{
-  depths:       DepthLog[]     // `/depth`
-  targetDepths: DepthLog[]     // `/target_depth`
-  poses:        PoseLog[]      // `/pose`
-  pressures:    PressureLog[]  // `/pressure`
-  leakages:     LeakageLog[]   // `/leakage`
-  alives:       AliveLog[]     // `/alive`
-}>({
-  depths:       [{ record_datetime: "2025-05-05T17:00:00Z", depth: 0 }],
-  targetDepths: [{ record_datetime: "2025-05-05T17:00:00Z", depth: 0 }],
-  poses:        [{ record_datetime: "2025-05-05T17:00:00Z", x: 0, y: 0, z: 0, qw: 0, qx: 0, qy: 0, qz: 0 }],
-  pressures:    [
-    { record_datetime: "2025-05-05T17:00:00Z", pressure: 0.0, location: 'hull' },
-    { record_datetime: "2025-03-24T17:00:00Z", pressure: 0.0, location: 'bladder' }
-  ],
-  leakages:     [{ record_datetime: "2025-05-05T17:00:00Z", has_leak: false }],
-  alives:       [{ record_datetime: "2025-05-05T17:00:00Z", is_alive: true }],
-})
+const dataLogStore = useDataLogStore()
+const { dataLogs } = storeToRefs(dataLogStore);
 
-const latestDepth = computed(() => subData.value.depths.slice(-1)[0]?.depth ?? 0)
-const latestTargetDepth = computed(() => subData.value.targetDepths.slice(-1)[0]?.depth ?? 0)
-const latestPose = computed(() => subData.value.poses.slice(-1)[0] ?? { x:0, y:0, z:0, qw:0, qx:0, qy:0, qz:0, record_datetime: '' })
-const latestTimestamp = computed(() => subData.value.depths.slice(-1)[0]?.record_datetime ?? '')
-const hullPressure = computed(() => subData.value.pressures.find(p => p.location === 'hull')?.pressure ?? 0)
-const bladderPressure = computed(() => subData.value.pressures.find(p => p.location === 'bladder')?.pressure ?? 0)
-const latestLeakage = computed(() => subData.value.leakages.slice(-1)[0]?.has_leak ?? false)
-const latestAlive = computed(() => subData.value.alives.slice(-1)[0]?.is_alive ?? false)
+const latestDepth = computed(() => dataLogs.value.depths?.[0]?.depth ?? 0)
+const latestTargetDepth = computed(() => dataLogs.value.targetDepths?.[0]?.depth ?? 0)
+const latestPose = computed(() => dataLogs.value.poses?.[0] ?? { x:0, y:0, z:0, qw:0, qx:0, qy:0, qz:0, record_datetime: '' })
+const latestTimestamp = computed(() => dataLogs.value.depths?.[0]?.record_datetime ?? '')
+const hullPressure = computed(() => dataLogs.value.pressures.find(p => p.location === 'hull')?.pressure ?? 0)
+const bladderPressure = computed(() => dataLogs.value.pressures.find(p => p.location === 'bladder')?.pressure ?? 0)
+const latestLeakage = computed(() => dataLogs.value.leakages?.[0]?.has_leak ?? false)
+const latestAlive = computed(() => dataLogs.value.alives?.[0]?.is_alive ?? false)
 
 let chartInstance: Chart | null = null
 
