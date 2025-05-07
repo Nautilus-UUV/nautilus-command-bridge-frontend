@@ -1,6 +1,12 @@
 <script setup lang="ts">
 import SimpleCardWrapper from "@/components/SimpleCardWrapper.vue";
 import {sendCommand} from "@/store/commands";
+import {useMissionStore} from "@/store/missions";
+import {storeToRefs} from "pinia";
+
+const missionStore = useMissionStore();
+const {missions, selectedMissionId} = storeToRefs(missionStore);
+const {sendCurrentMission} = missionStore;
 </script>
 
 <template>
@@ -14,10 +20,16 @@ import {sendCommand} from "@/store/commands";
       label="Dive Profile Selection"
       hide-details
       max-width="400"
+      variant="outlined"
+      :items="missions"
+      v-model="selectedMissionId"
+      item-title="name"
+      item-value="mission_id"
     />
     <v-btn
       prepend-icon="mdi-briefcase-download"
       color="primary"
+      @click="sendCurrentMission"
     >
       Load To UUV
     </v-btn>
