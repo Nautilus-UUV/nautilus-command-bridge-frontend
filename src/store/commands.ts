@@ -151,7 +151,7 @@ export const useCommandStore = defineStore('commands', () => {
     insertCommands(data)
   }
 
-  setInterval(checkForNew, 50000)
+  setInterval(checkForNew, 5000)
 
   return {
     commands,
