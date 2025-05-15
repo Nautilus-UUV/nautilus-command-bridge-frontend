@@ -17,14 +17,16 @@ export interface PoseLog extends DatabaseLog {
   qz: number;
 }
 
-export type PressureSensorLocations = 'hull' | 'bladder'
+export type PressureSensorLocations = 'hull' | 'tank' | 'ext'
 export interface PressureLog extends DatabaseLog {
   pressure: number;
   location: PressureSensorLocations;
 }
 
+export type LeakageSensorLocations = 'front' | 'back'
 export interface LeakageLog extends DatabaseLog {
   has_leak: boolean;
+  location: LeakageSensorLocations;
 }
 
 export interface AliveLog extends DatabaseLog {

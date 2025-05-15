@@ -65,7 +65,9 @@ export const useDataLogStore = defineStore('dataLogs', () => {
         response = await jsonRequest({
           method: 'POST',
           endpoint: `${endpoint}/load-new`,
-          record_datetime: dataLogs.value[key][0].record_datetime,
+          body: {
+            record_datetime: dataLogs.value[key][0].record_datetime,
+          }
         });
       }
       if (!response.ok) {

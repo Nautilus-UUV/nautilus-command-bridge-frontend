@@ -12,6 +12,7 @@ import {
 import {useDataLogStore} from "@/store/datalogs";
 import {storeToRefs} from "pinia";
 import {LineChart} from "vue-chart-3";
+import {DateTime} from "luxon";
 
 Chart.register(LineController, LineElement, PointElement, LinearScale, Title, CategoryScale)
 
@@ -23,20 +24,23 @@ const latestTargetDepth = computed(() => dataLogs.value.targetDepths?.[0]?.depth
 const latestPose = computed(() => dataLogs.value.poses?.[0] ?? { x:0, y:0, z:0, qw:0, qx:0, qy:0, qz:0, record_datetime: '' })
 const latestTimestamp = computed(() => dataLogs.value.depths?.[0]?.record_datetime ?? '')
 const hullPressure = computed(() => dataLogs.value.pressures.find(p => p.location === 'hull')?.pressure ?? 0)
-const bladderPressure = computed(() => dataLogs.value.pressures.find(p => p.location === 'bladder')?.pressure ?? 0)
-const latestLeakage = computed(() => dataLogs.value.leakages?.[0]?.has_leak ?? false)
-const latestAlive = computed(() => dataLogs.value.alives?.[0]?.is_alive ?? false)
+const extPressure = computed(() => dataLogs.value.pressures.find(p => p.location === 'ext')?.pressure ?? 0)
+const tankPressure = computed(() => dataLogs.value.pressures.find(p => p.location === 'tank')?.pressure ?? 0)
+const latestLeakage = computed(() => dataLogs.value.leakages?.some(l => l.has_leak) ?? false)
+const latestAlive = computed(() => dataLogs.value.alives?.every(a => a.is_alive) ?? false)
+
+const newestDepth = computed(() => {
+  return dataLogs.value.depths?.slice(0, 30).reverse() ?? []
+});
 
 // Use newest 30 datapoints from the data log
-const depthData = computed<number[]>(() => {
-  const depths = dataLogs.value.depths?.slice(0, 30) ?? []
-  return depths.map(d => -d.depth) // Invert depth for chart
-});
+const depthData = computed<number[]>(() => newestDepth.value.map(d => -d.depth));
 
 // Set indexes for the x-axis
-const labels = computed<number[]>(() => {
-  return depthData.value.map((_, index) => index)
-});
+const labels = computed<string[]>(() => newestDepth.value.map(d => {
+  const depth_dt = DateTime.fromISO(d.record_datetime, { zone: 'system' });
+  return depth_dt.toFormat('HH:mm:ss.SSS');
+}));
 
 const chartData = computed(() => {
   return {
@@ -66,10 +70,10 @@ const chartOptions = ref({
       }
     },
     y: {
-      min: 0,
-      max: 30,
+      min: -100,
+      max: 0,
       ticks: {
-        stepSize: 5
+        stepSize: 10
       },
       title: {
         display: true,
@@ -105,13 +109,13 @@ const chartOptions = ref({
       </div>
 
       <div class="item bot-left" style="grid-area: 3 / 1;">
-        Bladder Pressure: {{ bladderPressure }}
+        Tank Pressure: {{ tankPressure }}
       </div>
       <div class="item bot-center" style="grid-area: 3 / 3;">
         Leakage: {{ latestLeakage ? 'Yes' : 'No' }}
       </div>
       <div class="item bot-right" style="grid-area: 3 / 5;">
-        Alive: {{ latestAlive ? 'Yes' : 'No' }}
+        Ext Pressure: {{ extPressure }}
       </div>
     </div>
 
