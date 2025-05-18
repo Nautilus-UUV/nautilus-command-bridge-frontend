@@ -86,12 +86,22 @@ export const useDataLogStore = defineStore('dataLogs', () => {
     }
   }
 
+  function resetLeak () {
+    // TODO: Make better
+    // Resets the leak data to the latest value, and sets the leak to false
+    // This is a temporary solution as Jannick came to testing without the intention of programming
+
+    dataLogs.value.leakages = dataLogs.value.leakages.slice(0, 1) ?? [];
+    dataLogs.value.leakages[0].has_leak = false;
+  }
+
   // Call checkForNewData every 5 seconds
   setInterval( checkForNewData, 5000);
 
   return {
     dataLogs,
     loadDataLogs,
-    checkForNewData
+    checkForNewData,
+    resetLeak
   }
 })

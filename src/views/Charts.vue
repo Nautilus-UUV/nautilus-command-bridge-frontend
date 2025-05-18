@@ -18,6 +18,7 @@ Chart.register(LineController, LineElement, PointElement, LinearScale, Title, Ca
 
 const dataLogStore = useDataLogStore()
 const { dataLogs } = storeToRefs(dataLogStore);
+const { resetLeak } = dataLogStore;
 
 const latestDepth = computed(() => dataLogs.value.depths?.[0]?.depth ?? 0)
 const latestTargetDepth = computed(() => dataLogs.value.targetDepths?.[0]?.depth ?? 0)
@@ -26,7 +27,7 @@ const latestTimestamp = computed(() => dataLogs.value.depths?.[0]?.record_dateti
 const hullPressure = computed(() => dataLogs.value.pressures.find(p => p.location === 'hull')?.pressure ?? 0)
 const extPressure = computed(() => dataLogs.value.pressures.find(p => p.location === 'ext')?.pressure ?? 0)
 const tankPressure = computed(() => dataLogs.value.pressures.find(p => p.location === 'tank')?.pressure ?? 0)
-const latestLeakage = computed(() => dataLogs.value.leakages?.some(l => l.has_leak) ?? false)
+const latestLeakage = computed(() => dataLogs.value.leakages?.[0] ?? null)
 const latestAlive = computed(() => dataLogs.value.alives?.every(a => a.is_alive) ?? false)
 
 const newestDepth = computed(() => {
@@ -112,7 +113,13 @@ const chartOptions = ref({
         Tank Pressure: {{ tankPressure }}
       </div>
       <div class="item bot-center" style="grid-area: 3 / 3;">
-        Leakage: {{ latestLeakage ? 'Yes' : 'No' }}
+        Last Leak : {{ DateTime.fromISO(latestLeakage?.record_datetime, {zone: 'system'}).toFormat('HH:mm:ss.SSS') ?? 'No Data' }} <br/>
+        Leakage: {{ latestLeakage?.has_leak ? 'Yes' : 'No' }}
+        <v-btn
+          variant="outlined"
+          icon="mdi-refresh"
+          @click="resetLeak"
+        />
       </div>
       <div class="item bot-right" style="grid-area: 3 / 5;">
         Ext Pressure: {{ extPressure }}
