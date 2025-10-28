@@ -1,6 +1,8 @@
 export interface Waypoint {
-  id?: number;
+  id: number;
   depth: number;
+  latitude: number;
+  longitude: number;
   pause_duration: number;
 }
 

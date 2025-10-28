@@ -14,12 +14,12 @@ function addWaypoint() {
     if (currentMission.value.waypoints.length > 0) {
       uniqueId = currentMission.value.waypoints[currentMission.value.waypoints.length - 1].id + 1;
     }
-
+    
     while (currentMission.value.waypoints.some(w => w.id === uniqueId)) {
       uniqueId++;
     }
 
-    currentMission.value.waypoints.push({depth: 0, pause_duration: 0, id: uniqueId});
+    currentMission.value.waypoints.push({depth: 0, pause_duration: 0, id: uniqueId, latitude: 0, longitude: 0});
   }
 }
 </script>
@@ -99,6 +99,12 @@ function addWaypoint() {
         <th class="text-left">
           Duration
         </th>
+        <th class="text-left">
+          Latitude
+        </th>
+        <th class="text-left">
+          Longitude
+        </th>
         <th
           class="text-right"
           style="width: 100px"
@@ -145,6 +151,24 @@ function addWaypoint() {
                 type="number"
                 min="0"
                 suffix="s"
+                density="compact"
+              />
+            </td>
+            <td>
+              <v-text-field
+                v-model="element.latitude"
+                hide-details
+                variant="outlined"
+                type="number"
+                density="compact"
+              />
+            </td>
+            <td>
+              <v-text-field
+                v-model="element.longitude"
+                hide-details
+                variant="outlined"
+                type="number"
                 density="compact"
               />
             </td>
