@@ -20,6 +20,17 @@ Comprehensive technical reference for developers and integrators. Covers:
 - Build and development setup
 - Known limitations and planned improvements
 
+### [API Reference](./api.md)
+
+Complete backend API contract for FastAPI implementors. Covers:
+
+- Base URL and request conventions (POST-only, JSON, credentials)
+- All telemetry endpoints (load + load-new pattern for each sensor)
+- Command dispatch and history polling
+- Mission profile CRUD
+- Planned simulation endpoints with expected request shapes
+- FastAPI CORS configuration notes
+
 ### [User Guide](./user_guide.md)
 
 Practical operator reference. Covers:
