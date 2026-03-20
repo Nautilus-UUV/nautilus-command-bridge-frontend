@@ -9,6 +9,7 @@ import { fileURLToPath, URL } from 'node:url'
 
 // https://vitejs.dev/config/
 export default defineConfig({
+  base: process.env.GITHUB_ACTIONS ? '/nautilus-command-bridge-frontend/' : '/',
   plugins: [
     vue({
       template: { transformAssetUrls }
