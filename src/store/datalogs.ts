@@ -56,7 +56,7 @@ export const useDataLogStore = defineStore('dataLogs', () => {
   async function checkForNewData() {
     for (const [key , endpoint] of Object.entries(dataLogEndpoint)) {
       let response;
-      if (!dataLogs.value[key] || dataLogs.value[key].length <= 0) {
+      if (!dataLogs.value[key as keyof storedDataLogs] || dataLogs.value[key as keyof storedDataLogs].length <= 0) {
         response = await jsonRequest({
           method: 'POST',
           endpoint: `${endpoint}/load`,
@@ -66,7 +66,7 @@ export const useDataLogStore = defineStore('dataLogs', () => {
           method: 'POST',
           endpoint: `${endpoint}/load-new`,
           body: {
-            record_datetime: dataLogs.value[key][0].record_datetime,
+            record_datetime: dataLogs.value[key as keyof storedDataLogs][0].record_datetime,
           }
         });
       }
@@ -81,8 +81,8 @@ export const useDataLogStore = defineStore('dataLogs', () => {
       }
 
       // Add the new data to the beginning of the array and limit the size to 100
-      dataLogs.value[key].unshift(...data);
-      dataLogs.value[key] = dataLogs.value[key as keyof storedDataLogs].slice(0, 100);
+      dataLogs.value[key as keyof storedDataLogs].unshift(...data);
+      dataLogs.value[key as keyof storedDataLogs] = dataLogs.value[key as keyof storedDataLogs].slice(0, 100) as any;
     }
   }
 

@@ -14,7 +14,6 @@ export default defineConfig({
     vue({
       template: { transformAssetUrls }
     }),
-    // https://github.com/vuetifyjs/vuetify-loader/tree/next/packages/vite-plugin
     vuetify({
       autoImport: true,
       styles: {
@@ -35,17 +34,29 @@ export default defineConfig({
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url))
     },
-    extensions: [
-      '.js',
-      '.json',
-      '.jsx',
-      '.mjs',
-      '.ts',
-      '.tsx',
-      '.vue',
-    ],
+    extensions: ['.js', '.json', '.jsx', '.mjs', '.ts', '.tsx', '.vue'],
   },
   server: {
     port: 3000,
+  },
+  css: {
+    preprocessorOptions: {
+      sass: { api: 'modern-compiler' },
+      scss: { api: 'modern-compiler' },
+    },
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-vue':      ['vue', 'vue-router', 'pinia'],
+          'vendor-vuetify':  ['vuetify'],
+          'vendor-three':    ['three'],
+          'vendor-chart':    ['chart.js', 'vue-chart-3'],
+          'vendor-luxon':    ['luxon'],
+          'vendor-draggable': ['vuedraggable', 'sortablejs'],
+        },
+      },
+    },
   },
 })
