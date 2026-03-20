@@ -10,11 +10,13 @@
   },
   "dependencies": {
     "@mdi/font": "7.0.96",
+    "@types/three": "^0.183.1",
     "chart.js": "^3.9.1",
     "core-js": "^3.29.0",
     "luxon": "^3.6.1",
     "pinia": "^2.0.0",
     "roboto-fontface": "*",
+    "three": "^0.183.2",
     "vue": "^3.2.0",
     "vue-chart-3": "^3.1.8",
     "vue-router": "^4.0.0",

@@ -1,190 +1,77 @@
 <script setup lang="ts">
-import SimpleCardWrapper from "@/components/SimpleCardWrapper.vue";
-import draggable from "vuedraggable";
-import {useMissionStore} from "@/store/missions";
-import {storeToRefs} from "pinia";
+import { ref } from 'vue'
+import SimpleCardWrapper from "@/components/SimpleCardWrapper.vue"
+import NaivePathEditor from "@/components/CommandPanels/NaivePathEditor.vue"
+import type { DiveProfileType } from '@/types/PathTypes'
 
-const missionStore = useMissionStore();
-const {missions, currentMission, selectedMissionId} = storeToRefs(missionStore);
-const {createMission, updateMission, deleteMission} = missionStore;
-
-function addWaypoint() {
-  if (currentMission.value) {
-    let uniqueId = 0;
-    if (currentMission.value.waypoints.length > 0) {
-      uniqueId = currentMission.value.waypoints[currentMission.value.waypoints.length - 1].id + 1;
-    }
-
-    while (currentMission.value.waypoints.some(w => w.id === uniqueId)) {
-      uniqueId++;
-    }
-
-    currentMission.value.waypoints.push({depth: 0, pause_duration: 0, id: uniqueId});
-  }
-}
+const profileType = ref<DiveProfileType>('naive')
 </script>
 
 <template>
-<SimpleCardWrapper
-  style="min-height: 400px"
->
-  <div
-    class="d-flex align-center ga-2 pa-0 flex-0-0"
-  >
-    <div
-      class="text-h5"
-    >
-      Dive Profile
-    </div>
-    <v-spacer/>
-    <v-btn
-      icon="mdi-plus"
-      variant="outlined"
-      @click="createMission"
-    />
-    <v-select
-      label="Dive Profile Selection"
-      hide-details
-      max-width="400"
-      variant="outlined"
-      :items="missions"
-      v-model="selectedMissionId"
-      item-title="name"
-      item-value="mission_id"
-    />
-    <v-btn
-      icon="mdi-content-save"
-      variant="outlined"
-      :disabled="!currentMission"
-      @click="updateMission()"
-    />
+<SimpleCardWrapper title="Dive Profile" style="min-height: 400px">
 
-    <v-btn
-      icon="mdi-delete"
-      variant="flat"
-      color="error"
-      @click="deleteMission()"
-      :disabled="missions.length <= 1 || !currentMission"
-    />
-  </div>
-  <div
-    class="d-flex align-center flex-0-0"
-    v-if="currentMission"
-  >
-    <v-text-field
-      label="Name"
-      hide-details
-      v-model="currentMission.name"
-    />
-  </div>
-  <div
-    class="flex-1-1 position-relative"
-    v-if="currentMission"
-  >
-    <v-table
-      class="position-absolute top-0 left-0 w-100 h-100 bg-grey-lighten-5 border-sm rounded-lg"
-      fixed-header
+  <!-- Type selector -->
+  <div class="type-row flex-0-0">
+    <button
+      class="type-btn"
+      :class="{ active: profileType === 'naive' }"
+      @click="profileType = 'naive'"
     >
-      <thead>
-      <tr>
-        <th
-          class="text-left"
-          style="width: 140px"
-        >
-          Waypoints
-        </th>
-        <th class="text-left">
-          Depth
-        </th>
-        <th class="text-left">
-          Duration
-        </th>
-        <th
-          class="text-right"
-          style="width: 100px"
-        >
-          Actions
-        </th>
-      </tr>
-      </thead>
-      <draggable
-        v-model="currentMission.waypoints"
-        tag="tbody"
-        handle=".drag-handle"
-        item-key="id"
-        ghost-class="bg-indigo-lighten-4"
-      >
-        <template #item="{element, index}">
-          <tr>
-            <td>
-              <v-icon
-                class="mr-3 drag-handle"
-              >
-                mdi-drag
-              </v-icon>
-              <span>
-                # {{ index + 1 }}
-              </span>
-            </td>
-            <td>
-              <v-text-field
-                v-model="element.depth"
-                hide-details
-                variant="outlined"
-                type="number"
-                min="0"
-                suffix="m"
-                density="compact"
-              />
-            </td>
-            <td>
-              <v-text-field
-                v-model="element.pause_duration"
-                hide-details
-                variant="outlined"
-                type="number"
-                min="0"
-                suffix="s"
-                density="compact"
-              />
-            </td>
-            <td
-              class="text-right"
-            >
-              <v-btn
-                class="ml-2"
-                icon="mdi-delete"
-                size="small"
-                density="comfortable"
-                variant="text"
-                color="error"
-                @click="currentMission.waypoints.splice(index, 1)"
-              />
-            </td>
-          </tr>
-        </template>
-
-        <template #footer>
-          <tr>
-            <td
-              class="text-center"
-              colspan="4"
-            >
-              <v-btn
-                variant="outlined"
-                @click="addWaypoint"
-              >
-                Add Waypoint
-              </v-btn>
-            </td>
-          </tr>
-        </template>
-      </draggable>
-    </v-table>
+      Naive
+    </button>
+    <button
+      class="type-btn"
+      :class="{ active: profileType === 'sophisticated' }"
+      @click="profileType = 'sophisticated'"
+      title="Not yet implemented"
+    >
+      Sophisticated
+      <span class="wip-tag">WIP</span>
+    </button>
   </div>
+
+  <!-- Naive -->
+  <div v-if="profileType === 'naive'" class="flex-1-1" style="min-height:0">
+    <NaivePathEditor />
+  </div>
+
+  <!-- Sophisticated placeholder -->
+  <div v-else class="wip-placeholder flex-1-1">
+    <v-icon size="32" style="color: var(--border)">mdi-flask-outline</v-icon>
+    <p class="wip-text">Sophisticated dive profile planning is not yet implemented.</p>
+    <p class="wip-hint">This mode will support advanced path optimisation, obstacle avoidance, and multi-vehicle coordination.</p>
+  </div>
+
 </SimpleCardWrapper>
 </template>
 
 <style scoped>
+.type-row { display: flex; gap: 6px; }
 
+.type-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 14px;
+  font-size: 11.5px; font-family: var(--font-ui); font-weight: 500;
+  border: 1px solid var(--border-btn);
+  border-radius: var(--radius-xs);
+  cursor: pointer; background: var(--bg-btn); color: var(--text-muted);
+  transition: background var(--transition), border-color var(--transition), color var(--transition);
+}
+.type-btn:hover  { background: var(--accent-hover-bg); border-color: var(--accent-border); color: var(--text); }
+.type-btn.active { background: var(--accent-active-bg); border-color: var(--accent); color: var(--accent); }
+
+.wip-tag {
+  font-size: 8.5px; font-weight: 600; letter-spacing: 0.06em;
+  background: var(--status-q-bg); color: var(--status-q-text);
+  border: 1px solid var(--status-q-border);
+  border-radius: 2px; padding: 1px 4px;
+}
+
+.wip-placeholder {
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 10px; text-align: center; padding: 24px;
+}
+.wip-text { font-family: var(--font-ui); font-size: 13px; color: var(--text-muted); }
+.wip-hint { font-family: var(--font-ui); font-size: 11px; color: var(--text-hint); max-width: 320px; line-height: 1.6; }
 </style>

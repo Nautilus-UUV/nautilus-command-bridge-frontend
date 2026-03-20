@@ -10,15 +10,23 @@ import 'vuetify/styles'
 
 // Composables
 import { createVuetify } from 'vuetify'
-import colors from 'vuetify/util/colors'
 
 // https://vuetifyjs.com/en/introduction/why-vuetify/#feature-guides
 export default createVuetify({
   theme: {
+    defaultTheme: 'nautilus',
     themes: {
-      light: {
+      nautilus: {
+        dark: false,
         colors: {
-          primary: colors.indigo.base,
+          primary:    '#4a7fcb',
+          secondary:  '#6b6b6b',
+          background: '#e8e8e8',
+          surface:    '#ffffff',
+          error:      '#c0392b',
+          warning:    '#c87f0a',
+          success:    '#2e7d32',
+          info:       '#4a7fcb',
         },
       },
     },
