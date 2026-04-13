@@ -1,0 +1,3 @@
+- [project_overview.md](project_overview.md) — nautilus-command-bridge overview: tech stack, design style, key facts
+- [project_structure.md](project_structure.md) — key file paths and responsibilities
+- [feedback_ui_redesign_2026_04.md](feedback_ui_redesign_2026_04.md) — team UI feedback: renaming, units, attitude indicator, debug page, view-only, quick commands

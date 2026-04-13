@@ -1,4 +1,4 @@
-export type CommandTypes = 'Mission_Profile' | 'Start' | 'Stop' | 'Pause' | 'Abort'
+export type CommandTypes = 'Mission_Profile' | 'Start' | 'Stop' | 'Pause' | 'Abort' | 'Adjust_Depth' | 'Set_Pitch' | 'Surface'
 export type CommandStatus = 'queued' | 'acknowledged' | 'failed'
 
 export interface Command {
