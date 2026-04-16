@@ -2,7 +2,7 @@
 import { ref, onMounted, onBeforeUnmount, watch, computed } from 'vue'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
+import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js'
 import { useTheme } from '@/composables/useTheme'
 
 const props = defineProps<{
@@ -87,9 +87,19 @@ async function buildScene() {
   scene.add(dirLight2)
 
   // UUV model
-  const loader = new GLTFLoader()
-  const gltf = await loader.loadAsync('/models/uuv.glb').catch((err) => { console.error('Failed to load uuv.glb:', err); throw err })
-  uuvMesh = gltf.scene
+  const loader = new STLLoader()
+  const geometry = await loader.loadAsync('/models/uuv.stl').catch((err) => { console.error('Failed to load uuv.stl:', err); throw err })
+  // STL ships with length axis vertical — lay it flat so nose points along +X
+  geometry.rotateZ(-Math.PI / 2)
+  geometry.rotateX(-Math.PI / 2)
+  geometry.computeVertexNormals()
+  const material = new THREE.MeshStandardMaterial({
+    color: 0xb8c4d4,
+    metalness: 0.25,
+    roughness: 0.55,
+    flatShading: true,
+  })
+  uuvMesh = new THREE.Mesh(geometry, material)
 
   // Auto-center and scale to fit the original ellipsoid's ~5 unit length
   const box = new THREE.Box3().setFromObject(uuvMesh)
