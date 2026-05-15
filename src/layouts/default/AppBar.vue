@@ -1,9 +1,29 @@
 <script lang="ts" setup>
-import { useRoute } from 'vue-router'
+import { watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useTheme } from '@/composables/useTheme'
+import { useAppMode } from '@/composables/useAppMode'
+import type { AppMode } from '@/composables/useAppMode'
 
 const route = useRoute()
+const router = useRouter()
 const { isDark, toggleTheme } = useTheme()
+const { mode, setMode, isViewer } = useAppMode()
+
+function onModeChange(m: AppMode) {
+  setMode(m)
+  // If switching to viewer while on a controller-only page, redirect to telemetry
+  if (m === 'viewer' && (route.name === 'Commands' || route.name === 'Simulations')) {
+    router.push({ name: 'Charts' })
+  }
+}
+
+// Guard: redirect away from controller-only pages in viewer mode
+watch(() => route.name, (name) => {
+  if (isViewer.value && (name === 'Commands' || name === 'Simulations')) {
+    router.push({ name: 'Charts' })
+  }
+})
 </script>
 
 <template>
@@ -30,6 +50,7 @@ const { isDark, toggleTheme } = useTheme()
         Telemetry
       </router-link>
       <router-link
+        v-if="!isViewer"
         :to="{ name: 'Commands' }"
         class="nav-link"
         :class="{ active: route.name === 'Commands' }"
@@ -38,6 +59,7 @@ const { isDark, toggleTheme } = useTheme()
         Commands
       </router-link>
       <router-link
+        v-if="!isViewer"
         :to="{ name: 'Simulations' }"
         class="nav-link"
         :class="{ active: route.name === 'Simulations' }"
@@ -45,7 +67,37 @@ const { isDark, toggleTheme } = useTheme()
         <v-icon size="12" class="mr-1">mdi-flask-outline</v-icon>
         Simulations
       </router-link>
+      <router-link
+        :to="{ name: 'Debug' }"
+        class="nav-link"
+        :class="{ active: route.name === 'Debug' }"
+      >
+        <v-icon size="12" class="mr-1">mdi-bug-outline</v-icon>
+        Debug
+      </router-link>
     </nav>
+
+    <!-- Mode selector -->
+    <div class="mode-select">
+      <button
+        class="mode-btn"
+        :class="{ active: mode === 'controller' }"
+        @click="onModeChange('controller')"
+        title="Controller — full control + telemetry"
+      >
+        <v-icon size="12" class="mr-1">mdi-gamepad-variant-outline</v-icon>
+        Controller
+      </button>
+      <button
+        class="mode-btn"
+        :class="{ active: mode === 'viewer' }"
+        @click="onModeChange('viewer')"
+        title="Viewer — read-only telemetry"
+      >
+        <v-icon size="12" class="mr-1">mdi-eye-outline</v-icon>
+        Viewer
+      </button>
+    </div>
 
     <!-- Theme toggle -->
     <button class="theme-btn" @click="toggleTheme" :title="isDark ? 'Switch to light mode' : 'Switch to dark mode'">
@@ -114,6 +166,41 @@ const { isDark, toggleTheme } = useTheme()
   background: var(--accent-active-bg);
   border-color: var(--accent);
   color: var(--accent);
+}
+
+/* ── Mode selector ────────────────────────────────────────────────────── */
+.mode-select {
+  display: flex;
+  gap: 4px;
+  margin-left: 24px;
+  margin-right: 12px;
+  flex-shrink: 0;
+}
+
+.mode-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  font-family: var(--font-ui);
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--text-hint);
+  border: 1px solid var(--border-btn);
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  background: var(--bg-btn);
+  transition: background var(--transition), border-color var(--transition), color var(--transition);
+  letter-spacing: 0.02em;
+}
+.mode-btn:hover {
+  background: var(--accent-hover-bg);
+  border-color: var(--accent-border);
+  color: var(--text);
+}
+.mode-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
 }
 
 /* ── Theme button ──────────────────────────────────────────────────────── */

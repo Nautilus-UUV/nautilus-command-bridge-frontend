@@ -2,6 +2,7 @@
 import { ref, onMounted, onBeforeUnmount, watch, computed } from 'vue'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js'
 import { useTheme } from '@/composables/useTheme'
 
 const props = defineProps<{
@@ -20,7 +21,7 @@ let renderer:    THREE.WebGLRenderer
 let scene:       THREE.Scene
 let camera:      THREE.PerspectiveCamera
 let controls:    OrbitControls
-let uuvMesh:     THREE.Mesh
+let uuvMesh:     THREE.Object3D
 let gridHelper:  THREE.GridHelper
 let ambLight:    THREE.AmbientLight
 let dirLight1:   THREE.DirectionalLight
@@ -58,15 +59,11 @@ const yawDeg = computed(() => {
 const C = {
   bg:       () => isDark.value ? 0x0f0f16 : 0xf0f0f4,
   grid:     () => isDark.value ? 0x282840 : 0xccccde,
-  body:     () => isDark.value ? 0x4a7fcb : 0x3a6fbb,
-  nose:     () => isDark.value ? 0xe87040 : 0xdd5520,
-  fin:      () => isDark.value ? 0x3a5a9a : 0x2a4a8a,
   ambient:  () => isDark.value ? 0x303050 : 0x909099,
   dirLight: () => isDark.value ? 0xaab8d0 : 0xffffff,
-  specular: () => isDark.value ? 0x334466 : 0x8899bb,
 }
 
-function buildScene() {
+async function buildScene() {
   scene = new THREE.Scene()
   scene.background = new THREE.Color(C.bg())
 
@@ -89,28 +86,31 @@ function buildScene() {
   dirLight2.position.set(-4, -2, -4)
   scene.add(dirLight2)
 
-  // UUV body — scaled ellipsoid
-  const bodyGeo = new THREE.SphereGeometry(1, 64, 40)
-  const bodyMat = new THREE.MeshPhongMaterial({
-    color: C.body(),
-    shininess: 65,
-    specular: C.specular(),
+  // UUV model
+  const loader = new STLLoader()
+  const geometry = await loader.loadAsync('/models/uuv.stl').catch((err) => { console.error('Failed to load uuv.stl:', err); throw err })
+  // STL ships with length axis vertical — lay it flat so nose points along +X
+  geometry.rotateZ(-Math.PI / 2)
+  geometry.rotateX(-Math.PI / 2)
+  geometry.computeVertexNormals()
+  const material = new THREE.MeshStandardMaterial({
+    color: 0xb8c4d4,
+    metalness: 0.25,
+    roughness: 0.55,
+    flatShading: true,
   })
-  uuvMesh = new THREE.Mesh(bodyGeo, bodyMat)
-  uuvMesh.scale.set(2.5, 0.72, 0.72)
+  uuvMesh = new THREE.Mesh(geometry, material)
+
+  // Auto-center and scale to fit the original ellipsoid's ~5 unit length
+  const box = new THREE.Box3().setFromObject(uuvMesh)
+  const center = box.getCenter(new THREE.Vector3())
+  const size = box.getSize(new THREE.Vector3())
+  const maxDim = Math.max(size.x, size.y, size.z)
+  const scale = 5.0 / maxDim
+  uuvMesh.scale.setScalar(scale)
+  uuvMesh.position.sub(center.multiplyScalar(scale))
+
   scene.add(uuvMesh)
-
-  // Nose cap
-  const noseMat = new THREE.MeshPhongMaterial({ color: C.nose(), shininess: 80 })
-  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.16, 20, 20), noseMat)
-  nose.position.set(2.5, 0, 0)
-  uuvMesh.add(nose)
-
-  // Dorsal fin
-  const finMat = new THREE.MeshPhongMaterial({ color: C.fin() })
-  const fin = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.04, 0.6), finMat)
-  fin.position.set(-0.2, 0.72, 0)
-  uuvMesh.add(fin)
 
   // Reference grid (horizontal)
   gridHelper = new THREE.GridHelper(10, 20, C.grid(), C.grid())
@@ -146,10 +146,6 @@ function applyQuaternion() {
 function updateColors() {
   if (!scene) return
   scene.background = new THREE.Color(C.bg())
-  ;(uuvMesh.material as THREE.MeshPhongMaterial).color.set(C.body())
-  ;(uuvMesh.material as THREE.MeshPhongMaterial).specular.set(C.specular())
-  const nose = uuvMesh.children[0] as THREE.Mesh
-  ;(nose.material as THREE.MeshPhongMaterial).color.set(C.nose())
   // GridHelper has no setColors() — recreate it
   scene.remove(gridHelper)
   gridHelper = new THREE.GridHelper(10, 20, C.grid(), C.grid())
@@ -190,11 +186,11 @@ function animate() {
   renderer.render(scene, camera)
 }
 
-onMounted(() => {
+onMounted(async () => {
   if (!canvasRef.value) return
   renderer = new THREE.WebGLRenderer({ canvas: canvasRef.value, antialias: true })
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
-  buildScene()
+  await buildScene()
   buildControls()
   resize()
   animate()
