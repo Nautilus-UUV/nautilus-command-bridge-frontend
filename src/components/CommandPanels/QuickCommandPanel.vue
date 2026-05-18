@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import { ref, computed } from 'vue'
 import SimpleCardWrapper from "@/components/SimpleCardWrapper.vue"
 import { sendCommand } from "@/store/commands"
+import { useMqttBridgeStore } from "@/store/mqttBridge"
 
 interface QuickCmd {
   label: string
@@ -10,14 +12,18 @@ interface QuickCmd {
   variant?: 'default' | 'accent' | 'warn'
 }
 
-const depthCmds: QuickCmd[] = [
-  { label: 'Up 1m',  icon: 'mdi-arrow-up',   command: 'Adjust_Depth', data: { delta: -1 } },
-  { label: 'Up 5m',  icon: 'mdi-arrow-up',   command: 'Adjust_Depth', data: { delta: -5 } },
-  { label: 'Up 10m', icon: 'mdi-arrow-up',   command: 'Adjust_Depth', data: { delta: -10 } },
-  { label: 'Dn 1m',  icon: 'mdi-arrow-down', command: 'Adjust_Depth', data: { delta: 1 } },
-  { label: 'Dn 5m',  icon: 'mdi-arrow-down', command: 'Adjust_Depth', data: { delta: 5 } },
-  { label: 'Dn 10m', icon: 'mdi-arrow-down', command: 'Adjust_Depth', data: { delta: 10 } },
-]
+const PUMP_TOPIC = 'nautilus/cmd/debug/bcu/rpm'
+
+const mqttBridge = useMqttBridgeStore()
+const bridgeOnline = computed(() => mqttBridge.bridgeStatus === 'online')
+
+const pumpRpm = ref<number>(500)
+const pumpSeconds = ref<number>(2)
+
+function sendPump(direction: 'in' | 'out') {
+  const rpm = direction === 'out' ? -Math.abs(pumpRpm.value) : Math.abs(pumpRpm.value)
+  mqttBridge.publish(PUMP_TOPIC, { rpm, duration_s: pumpSeconds.value })
+}
 
 const pitchCmds: QuickCmd[] = [
   { label: '+5°',  icon: 'mdi-rotate-right', command: 'Set_Pitch', data: { angle: 5 } },
@@ -36,13 +42,35 @@ function send(cmd: QuickCmd) {
 <template>
 <SimpleCardWrapper title="Quick Commands">
 
-  <!-- Depth section -->
+  <!-- BCU pump (debug) section -->
   <div class="qc-section">
-    <div class="qc-section-label">Depth</div>
-    <div class="qc-grid">
-      <button v-for="cmd in depthCmds" :key="cmd.label" class="qc-btn" @click="send(cmd)">
-        <v-icon size="11" class="mr-1">{{ cmd.icon }}</v-icon>
-        {{ cmd.label }}
+    <div class="qc-section-label">BCU Pump (debug)</div>
+    <div class="qc-pump-inputs">
+      <label class="qc-input-group">
+        <span>RPM</span>
+        <input type="number" v-model.number="pumpRpm" min="0" step="50" />
+      </label>
+      <label class="qc-input-group">
+        <span>Seconds</span>
+        <input type="number" v-model.number="pumpSeconds" min="0" step="0.5" />
+      </label>
+    </div>
+    <div class="qc-row">
+      <button
+        class="qc-btn"
+        :disabled="!bridgeOnline"
+        @click="sendPump('in')"
+      >
+        <v-icon size="11" class="mr-1">mdi-arrow-down-bold</v-icon>
+        Pump In
+      </button>
+      <button
+        class="qc-btn"
+        :disabled="!bridgeOnline"
+        @click="sendPump('out')"
+      >
+        <v-icon size="11" class="mr-1">mdi-arrow-up-bold</v-icon>
+        Pump Out
       </button>
     </div>
   </div>
@@ -123,6 +151,48 @@ function send(cmd: QuickCmd) {
   color: var(--accent);
 }
 .qc-btn:active { background: var(--accent-active-bg); }
+.qc-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  background: var(--bg-btn);
+  color: var(--text-btn);
+  border-color: var(--border-btn);
+}
+
+.qc-pump-inputs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+  margin-bottom: 6px;
+}
+
+.qc-input-group {
+  display: flex;
+  flex-direction: column;
+  font-family: var(--font-ui);
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-hint);
+  gap: 3px;
+}
+
+.qc-input-group input {
+  padding: 5px 6px;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 500;
+  border: 1px solid var(--border-btn);
+  border-radius: var(--radius-xs);
+  background: var(--bg-btn);
+  color: var(--text-btn);
+  letter-spacing: 0.02em;
+}
+.qc-input-group input:focus {
+  outline: none;
+  border-color: var(--accent-border);
+}
 
 .qc-level {
   flex: 1;
