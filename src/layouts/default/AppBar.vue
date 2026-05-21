@@ -4,11 +4,13 @@ import { useRoute, useRouter } from 'vue-router'
 import { useTheme } from '@/composables/useTheme'
 import { useAppMode } from '@/composables/useAppMode'
 import type { AppMode } from '@/composables/useAppMode'
+import { useUnits } from '@/composables/useUnits'
 
 const route = useRoute()
 const router = useRouter()
 const { isDark, toggleTheme } = useTheme()
 const { mode, setMode, isViewer } = useAppMode()
+const { pressureUnit, togglePressureUnit } = useUnits()
 
 function onModeChange(m: AppMode) {
   setMode(m)
@@ -98,6 +100,16 @@ watch(() => route.name, (name) => {
         Viewer
       </button>
     </div>
+
+    <!-- Pressure unit toggle (m / Pa). Sensor displays bind to useUnits(). -->
+    <button
+      class="unit-btn"
+      :class="{ active: pressureUnit === 'Pa' }"
+      @click="togglePressureUnit"
+      :title="pressureUnit === 'm' ? 'Showing depth (m). Click for absolute pressure (Pa).' : 'Showing absolute pressure (Pa). Click for depth (m).'"
+    >
+      {{ pressureUnit }}
+    </button>
 
     <!-- Theme toggle -->
     <button class="theme-btn" @click="toggleTheme" :title="isDark ? 'Switch to light mode' : 'Switch to dark mode'">
@@ -201,6 +213,37 @@ watch(() => route.name, (name) => {
   background: var(--accent);
   border-color: var(--accent);
   color: #fff;
+}
+
+/* ── Unit toggle ───────────────────────────────────────────────────────── */
+.unit-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 30px;
+  margin-right: 6px;
+  padding: 0 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  border: 1px solid var(--border-btn);
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  background: var(--bg-btn);
+  color: var(--text-muted);
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
+  flex-shrink: 0;
+}
+.unit-btn:hover {
+  background: var(--accent-hover-bg);
+  border-color: var(--accent-border);
+  color: var(--accent);
+}
+.unit-btn.active {
+  color: var(--text);
+  border-color: var(--accent);
 }
 
 /* ── Theme button ──────────────────────────────────────────────────────── */
