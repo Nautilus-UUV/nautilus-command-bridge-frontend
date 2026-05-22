@@ -20,8 +20,10 @@ const bridgeOnline = computed(() => mqttBridge.bridgeStatus === 'online')
 const pumpRpm = ref<number>(500)
 const pumpSeconds = ref<number>(2)
 
-function sendPump(direction: 'in' | 'out') {
-  const rpm = direction === 'out' ? -Math.abs(pumpRpm.value) : Math.abs(pumpRpm.value)
+function sendPump(action: 'inflate' | 'deflate') {
+  // Positive RPM pumps oil INTO the bladder -> it inflates -> more displacement
+  // -> the glider rises. Negative RPM pumps oil OUT -> deflates -> sink.
+  const rpm = action === 'inflate' ? Math.abs(pumpRpm.value) : -Math.abs(pumpRpm.value)
   mqttBridge.publish(PUMP_TOPIC, { rpm, duration_s: pumpSeconds.value })
 }
 
@@ -59,18 +61,18 @@ function send(cmd: QuickCmd) {
       <button
         class="qc-btn"
         :disabled="!bridgeOnline"
-        @click="sendPump('in')"
+        @click="sendPump('inflate')"
       >
-        <v-icon size="11" class="mr-1">mdi-arrow-down-bold</v-icon>
-        Pump In
+        <v-icon size="11" class="mr-1">mdi-arrow-up-bold</v-icon>
+        Pump In Bladder
       </button>
       <button
         class="qc-btn"
         :disabled="!bridgeOnline"
-        @click="sendPump('out')"
+        @click="sendPump('deflate')"
       >
-        <v-icon size="11" class="mr-1">mdi-arrow-up-bold</v-icon>
-        Pump Out
+        <v-icon size="11" class="mr-1">mdi-arrow-down-bold</v-icon>
+        Pump Out Bladder
       </button>
     </div>
   </div>
