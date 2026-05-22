@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed } from 'vue'
 import {
   Chart, LineController, LineElement, PointElement,
   LinearScale, Title, CategoryScale, Tooltip, Filler, Legend
@@ -9,24 +9,34 @@ import { storeToRefs } from 'pinia'
 import { LineChart } from 'vue-chart-3'
 import { DateTime } from 'luxon'
 import { useTheme } from '@/composables/useTheme'
-import { useUnits, ATMOSPHERIC_PA, PA_PER_M_ABSOLUTE } from '@/composables/useUnits'
+import { useUnits } from '@/composables/useUnits'
+import { useTelemetryCharts } from '@/composables/useTelemetryCharts'
 import AttitudeIndicator from '@/components/AttitudeIndicator.vue'
 import UUVViewer from '@/components/UUVViewer.vue'
 
 Chart.register(LineController, LineElement, PointElement, LinearScale, Title, CategoryScale, Tooltip, Filler, Legend)
 
 const { isDark } = useTheme()
-const { pressureUnit, formatPressure, paToDepthM } = useUnits()
+const { pressureUnit, formatPressure } = useUnits()
 
 const telemStore = useTelemetryStore()
 const {
   position, positionTarget,
   imuLeft, imuRight,
   bcuPressure, externalPressure,
-  bcuRpm, bcuValves,
-  acuPitch, acuRoll,
   missionActive,
 } = storeToRefs(telemStore)
+
+// Strip-chart configs are shared with the Commands tab through this
+// composable, so the depth / BCU / ACU graphs stay identical on both pages.
+// Alias each group back to the names the template already uses so the markup
+// below is untouched.
+const charts = useTelemetryCharts()
+const { data: chartData, options: chartOptions, yMin, yMax, reset: resetYBounds } = charts.depth
+const { data: bcuChartData, options: bcuChartOptions, yMin: bcuYMin, yMax: bcuYMax,
+        latestRpm, valve1Open, valve2Open } = charts.bcu
+const { data: acuChartData, options: acuChartOptions, yMin: acuYMin, yMax: acuYMax,
+        pitchMmText, rollDegText } = charts.acu
 
 // Mission id -> human name. Mirrors the dispatch table in
 // CommandProfilePanel.vue; keep in sync if missions are reordered in
@@ -53,25 +63,9 @@ const latestDepth = computed(() => latestPose.value.position.z)
 
 const latestExtPa  = computed(() => externalPressure.value[0]?.value ?? null)
 const latestTankPa = computed(() => bcuPressure.value[0]?.value ?? null)
-const latestRpm    = computed(() => bcuRpm.value[0]?.value ?? null)
-const latestValves = computed(() => bcuValves.value[0]?.value ?? null)
-const latestPitch  = computed(() => acuPitch.value[0]?.value ?? null)
-const latestRoll   = computed(() => acuRoll.value[0]?.value ?? null)
 
 const activeMission = computed(() => missionActive.value[0]?.value ?? null)
 const missionTimeline = computed(() => missionActive.value.slice(0, 5))
-
-// Pitch/roll come over the wire as Int16 in the controller's wire units
-// (mm for pitch, centidegrees for roll). Convert for the readouts so the
-// operator sees something physical.
-const pitchMmText = computed(() =>
-  latestPitch.value === null ? '—' : `${latestPitch.value} mm`)
-const rollDegText = computed(() =>
-  latestRoll.value === null ? '—' : `${(latestRoll.value / 100).toFixed(2)}°`)
-
-// Valves bitmap -> two booleans (bit 0 = valve 1, bit 1 = valve 2).
-const valve1Open = computed(() => latestValves.value !== null && (latestValves.value & 1) !== 0)
-const valve2Open = computed(() => latestValves.value !== null && (latestValves.value & 2) !== 0)
 
 // ── Euler helper ──────────────────────────────────────────────────────
 function qToEuler(qw: number, qx: number, qy: number, qz: number) {
@@ -126,196 +120,6 @@ const tableRows = computed<TableRow[]>(() => {
     { sensor: 'Right IMU |ω|', value: imuRightGyro.value  !== null ? imuRightGyro.value.toFixed(3)  : '—', unit: 'rad/s', time: fmtTs(imuRightTs) },
   ]
 })
-
-// ── Depth chart (pressure-derived depth over time) ────────────────────
-// Source is the raw external pressure sensor, not the EKF. Unit
-// conversion goes through useUnits() so this strip chart tracks the
-// AppBar Pa/m toggle in lockstep with the numeric readouts. EKF Z
-// stays in the main table for comparison.
-//
-// Values stay positive (deeper = bigger number) and the Y axis is
-// rendered reversed so larger values plot lower on the chart -- so
-// "down" still maps to "below" visually while the readouts keep the
-// +down convention operators expect:
-//   m  mode -> displayed = depth_m           (surface 0, dive +10)
-//   Pa mode -> displayed = p_abs - ATM       (surface 0, dive +98100)
-// Both modes are linearly related by PA_PER_M_ABSOLUTE, so manual
-// bounds convert cleanly without an atmospheric offset.
-const newestExternalPressure = computed(() => externalPressure.value.slice(0, 60).reverse())
-const depthValues = computed<number[]>(() => {
-  if (pressureUnit.value === 'm') {
-    return newestExternalPressure.value.map(p => Math.round(paToDepthM(p.value) * 100) / 100)
-  }
-  return newestExternalPressure.value.map(p => Math.round(p.value - ATMOSPHERIC_PA))
-})
-const depthLabels = computed<string[]>(() =>
-  newestExternalPressure.value.map(p => DateTime.fromISO(p.recordDatetime, { zone:'system' }).toFormat('HH:mm:ss')))
-
-const depthSeriesLabel = computed(() =>
-  pressureUnit.value === 'm' ? 'Depth (m, +down)' : 'Gauge (Pa, atm=0, +down)')
-const depthAxisTitle = computed(() =>
-  pressureUnit.value === 'm' ? 'Depth (m, +down)' : 'Gauge pressure (Pa, atm=0, +down)')
-
-// Manual Y-axis bounds. `null` means auto-scale (Chart.js treats an
-// undefined `min`/`max` the same way). In the signed display the two
-// modes are scalar multiples (m * PA_PER_M_ABSOLUTE = Pa), so bounds
-// convert by a single factor and min/max keep their roles across the
-// toggle.
-//
-// Defaults are stated in meters (surface to a typical dive depth). If
-// the operator's persisted pressureUnit is Pa at boot, the m-defined
-// defaults are converted into gauge Pa so the chart shows the same
-// physical window in either unit. Page reload always reapplies these
-// defaults -- nothing about the bounds is persisted between sessions.
-const DEPTH_DEFAULT_MIN_M = 0
-const DEPTH_DEFAULT_MAX_M = 20
-const initialYMin = pressureUnit.value === 'm'
-  ? DEPTH_DEFAULT_MIN_M
-  : Math.round(DEPTH_DEFAULT_MIN_M * PA_PER_M_ABSOLUTE)
-const initialYMax = pressureUnit.value === 'm'
-  ? DEPTH_DEFAULT_MAX_M
-  : Math.round(DEPTH_DEFAULT_MAX_M * PA_PER_M_ABSOLUTE)
-const yMin = ref<number | null>(initialYMin)
-const yMax = ref<number | null>(initialYMax)
-
-watch(pressureUnit, (newUnit, oldUnit) => {
-  if (newUnit === oldUnit) return
-  const convert = (v: number | null): number | null => {
-    if (v === null) return null
-    if (newUnit === 'Pa') return Math.round(v * PA_PER_M_ABSOLUTE)
-    return Math.round((v / PA_PER_M_ABSOLUTE) * 100) / 100
-  }
-  yMin.value = convert(yMin.value)
-  yMax.value = convert(yMax.value)
-})
-
-function resetYBounds() {
-  yMin.value = null
-  yMax.value = null
-}
-
-const chartData = computed(() => ({
-  labels: depthLabels.value,
-  datasets: [
-    {
-      label: depthSeriesLabel.value,
-      data: depthValues.value,
-      borderColor: isDark.value ? '#6090d8' : '#4a7fcb',
-      backgroundColor: isDark.value ? 'rgba(96,144,216,0.07)' : 'rgba(74,127,203,0.07)',
-      fill: true, tension: 0, stepped: 'before' as const, pointRadius: 1,
-      pointBackgroundColor: isDark.value ? '#6090d8' : '#4a7fcb',
-      borderWidth: 1.5,
-    },
-  ],
-}))
-
-const chartOptions = computed(() => ({
-  scales: {
-    x: {
-      ticks: { font:{family:'Inter, sans-serif',size:10}, color: isDark.value ? '#606080' : '#808090', maxRotation:30, maxTicksLimit: 6 },
-      grid:  { color: isDark.value ? '#21212e' : '#e8e8ee' },
-    },
-    y: {
-      reverse: true,
-      ticks: { font:{family:'Inter, sans-serif',size:10}, color: isDark.value ? '#606080' : '#808090' },
-      grid:  { color: isDark.value ? '#21212e' : '#e8e8ee' },
-      title: { display:true, text: depthAxisTitle.value, font:{family:'Inter, sans-serif',size:10}, color: isDark.value ? '#505060' : '#909090' },
-      min: yMin.value ?? undefined,
-      max: yMax.value ?? undefined,
-    }
-  },
-  plugins: {
-    legend: { display: false },
-    tooltip: { titleFont:{family:'Inter, sans-serif',size:11}, bodyFont:{family:'Inter, sans-serif',size:11} }
-  },
-  responsive: true,
-  maintainAspectRatio: false,
-  animation: false as const,
-}))
-
-// ── BCU strip chart (rpm over time) ───────────────────────────────────
-const newestRpm = computed(() => bcuRpm.value.slice(0, 60).reverse())
-const bcuChartData = computed(() => ({
-  labels: newestRpm.value.map(p => DateTime.fromISO(p.recordDatetime, { zone:'system' }).toFormat('HH:mm:ss')),
-  datasets: [{
-    label: 'BCU RPM',
-    data: newestRpm.value.map(p => p.value),
-    borderColor: isDark.value ? '#d09040' : '#c07818',
-    backgroundColor: 'transparent',
-    fill: false, tension: 0, stepped: 'before' as const, pointRadius: 1, borderWidth: 1.5,
-  }],
-}))
-
-// Manual Y bounds for the BCU RPM strip chart. Default range covers
-// the controller's full forward/reverse pump envelope so single-axis
-// spikes stay visible without the chart auto-scaling around them.
-const bcuYMin = ref<number | null>(-4200)
-const bcuYMax = ref<number | null>(4200)
-
-const bcuChartOptions = computed(() => ({
-  scales: {
-    x: { ticks: { color: isDark.value ? '#606080' : '#808090', maxRotation: 30, maxTicksLimit: 6, font: { size: 10 } } },
-    y: {
-      ticks: { color: isDark.value ? '#606080' : '#808090', font: { size: 10 } },
-      min: bcuYMin.value ?? undefined,
-      max: bcuYMax.value ?? undefined,
-    },
-  },
-  plugins: { legend: { labels: { boxWidth: 12, font: { size: 10 } } } },
-  responsive: true, maintainAspectRatio: false,
-  animation: false as const,
-}))
-
-// ── ACU strip chart (pitch mm + roll deg) ─────────────────────────────
-const newestPitch = computed(() => acuPitch.value.slice(0, 60).reverse())
-const newestRoll  = computed(() => acuRoll.value.slice(0, 60).reverse())
-const acuChartData = computed(() => ({
-  labels: newestPitch.value.map(p => DateTime.fromISO(p.recordDatetime, { zone:'system' }).toFormat('HH:mm:ss')),
-  datasets: [
-    {
-      label: 'Pitch (mm)',
-      data: newestPitch.value.map(p => p.value),
-      borderColor: isDark.value ? '#60c090' : '#3a8c60',
-      yAxisID: 'y',
-      backgroundColor: 'transparent',
-      fill: false, tension: 0, stepped: 'before' as const, pointRadius: 1, borderWidth: 1.5,
-    },
-    {
-      label: 'Roll (°)',
-      data: newestRoll.value.map(p => p.value / 100),
-      borderColor: isDark.value ? '#c060c0' : '#8c3a8c',
-      yAxisID: 'y1',
-      backgroundColor: 'transparent',
-      fill: false, tension: 0, stepped: 'before' as const, pointRadius: 1, borderWidth: 1.5,
-      borderDash: [4, 3],
-    },
-  ],
-}))
-
-// Manual Y bounds for the ACU strip chart. The chart has two axes
-// (pitch mm on y, roll deg on y1); we only expose controls for the
-// primary pitch axis to keep the panel header from overflowing.
-// Default pitch window spans the trim sled's negative-mm bias range
-// so the operator sees the full physical travel without zoom drift.
-const acuYMin = ref<number | null>(-120)
-const acuYMax = ref<number | null>(0)
-
-const acuChartOptions = computed(() => ({
-  scales: {
-    x: { ticks: { color: isDark.value ? '#606080' : '#808090', maxRotation: 30, maxTicksLimit: 6, font: { size: 10 } } },
-    y: {
-      position: 'left',
-      title: { display: true, text: 'Pitch (mm)' },
-      ticks: { color: isDark.value ? '#606080' : '#808090' },
-      min: acuYMin.value ?? undefined,
-      max: acuYMax.value ?? undefined,
-    },
-    y1: { position: 'right', title: { display: true, text: 'Roll (°)'   }, grid: { drawOnChartArea: false } },
-  },
-  plugins: { legend: { labels: { boxWidth: 12, font: { size: 10 } } } },
-  responsive: true, maintainAspectRatio: false,
-  animation: false as const,
-}))
 
 // ── IMU per-axis (latest sample) + magnitudes ─────────────────────────
 // Per-axis values get their own table so a single tilted-bias or

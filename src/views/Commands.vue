@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import CommandBtnPanel from "@/components/CommandPanels/CommandBtnPanel.vue";
 import QuickCommandPanel from "@/components/CommandPanels/QuickCommandPanel.vue";
-import CommandHistoryPanel from "@/components/CommandPanels/CommandHistoryPanel.vue";
+import CommandGraphsPanel from "@/components/CommandPanels/CommandGraphsPanel.vue";
 import CommandProfilePanel from "@/components/CommandPanels/CommandProfilePanel.vue";
 </script>
 
@@ -16,8 +16,8 @@ import CommandProfilePanel from "@/components/CommandPanels/CommandProfilePanel.
     <div class="command-profiles">
       <CommandProfilePanel/>
     </div>
-    <div class="command-history">
-      <CommandHistoryPanel/>
+    <div class="command-graphs">
+      <CommandGraphsPanel/>
     </div>
   </div>
 </template>
@@ -36,7 +36,7 @@ import CommandProfilePanel from "@/components/CommandPanels/CommandProfilePanel.
 .command-btns     { grid-area: 1 / 1 / 2 / 2; }
 .command-quick    { grid-area: 2 / 1 / 3 / 2; }
 .command-profiles { grid-area: 3 / 1 / 4 / 2; }
-.command-history  { grid-area: 1 / 2 / 4 / 3; }
+.command-graphs   { grid-area: 1 / 2 / 4 / 3; min-height: 0; }
 
 @media (max-width: 959px) {
   .command-grid {
@@ -51,7 +51,7 @@ import CommandProfilePanel from "@/components/CommandPanels/CommandProfilePanel.
     height: 50vh;
   }
 
-  .command-history {
+  .command-graphs {
     height: 100vh;
   }
 }
