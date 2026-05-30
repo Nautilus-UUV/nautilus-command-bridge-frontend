@@ -1,20 +1,26 @@
 <script setup lang="ts">
-import CommandBtnPanel from "@/components/CommandPanels/CommandBtnPanel.vue";
-import QuickCommandPanel from "@/components/CommandPanels/QuickCommandPanel.vue";
+import EmergencySurfaceButton from "@/components/CommandPanels/EmergencySurfaceButton.vue";
+import ManualOverrideSlider from "@/components/CommandPanels/ManualOverrideSlider.vue";
+import DebugCommandsPanel from "@/components/CommandPanels/DebugCommandsPanel.vue";
 import CommandGraphsPanel from "@/components/CommandPanels/CommandGraphsPanel.vue";
 import CommandProfilePanel from "@/components/CommandPanels/CommandProfilePanel.vue";
+import SubsystemHealthPanel from "@/components/CommandPanels/SubsystemHealthPanel.vue";
 </script>
 
 <template>
   <div class="command-grid pa-3">
-    <div class="command-btns">
-      <CommandBtnPanel/>
+    <div class="command-emergency">
+      <EmergencySurfaceButton/>
     </div>
-    <div class="command-quick">
-      <QuickCommandPanel/>
+    <div class="command-debug">
+      <ManualOverrideSlider/>
+      <DebugCommandsPanel/>
     </div>
     <div class="command-profiles">
       <CommandProfilePanel/>
+    </div>
+    <div class="command-health">
+      <SubsystemHealthPanel/>
     </div>
     <div class="command-graphs">
       <CommandGraphsPanel/>
@@ -26,17 +32,22 @@ import CommandProfilePanel from "@/components/CommandPanels/CommandProfilePanel.
 .command-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  grid-template-rows: auto auto 1fr;
+  /* Left column sizes emergency/debug/profiles/health to their content; the
+     trailing 1fr row absorbs the slack so those cards hug their content
+     instead of stretching the full page. The graphs column spans all five
+     rows to stay full-height. */
+  grid-template-rows: auto auto auto auto 1fr;
   grid-column-gap: 10px;
   grid-row-gap: 10px;
   height: 100%;
   width: 100%;
 }
 
-.command-btns     { grid-area: 1 / 1 / 2 / 2; }
-.command-quick    { grid-area: 2 / 1 / 3 / 2; }
-.command-profiles { grid-area: 3 / 1 / 4 / 2; }
-.command-graphs   { grid-area: 1 / 2 / 4 / 3; min-height: 0; }
+.command-emergency { grid-area: 1 / 1 / 2 / 2; }
+.command-debug     { grid-area: 2 / 1 / 3 / 2; display: flex; flex-direction: column; gap: 10px; }
+.command-profiles  { grid-area: 3 / 1 / 4 / 2; }
+.command-health    { grid-area: 4 / 1 / 5 / 2; }
+.command-graphs    { grid-area: 1 / 2 / 6 / 3; min-height: 0; }
 
 @media (max-width: 959px) {
   .command-grid {
@@ -45,8 +56,7 @@ import CommandProfilePanel from "@/components/CommandPanels/CommandProfilePanel.
     gap: 10px;
   }
 
-  .command-btns,
-  .command-quick,
+  .command-debug,
   .command-profiles {
     height: 50vh;
   }

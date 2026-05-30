@@ -230,6 +230,21 @@ body,
 /* ── v-progress-circular ─────────────────────────────────────────────────── */
 .v-progress-circular { color: var(--accent) !important; }
 
+/* ── Locked panel content ────────────────────────────────────────────────── */
+/* Wrap the interactive part of a card in `.lock-target` and toggle `.locked`
+   to gray it out + block interaction (e.g. Debug Commands when manual override
+   is off, the Dive Profile when it's on). Keep the card title and any
+   explanatory hint/banner OUTSIDE the wrapper so they stay readable. */
+.lock-target {
+  transition: opacity var(--transition), filter var(--transition);
+}
+.lock-target.locked {
+  opacity: 0.4;
+  filter: grayscale(0.7);
+  pointer-events: none;
+  user-select: none;
+}
+
 /* ── Scrollbar (dark-friendly) ───────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }

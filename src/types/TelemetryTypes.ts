@@ -50,3 +50,39 @@ export interface Sample<T> {
   recordDatetime: string
   value: T
 }
+
+// Subsystem health -- nautilus/status/liveness (diagnostic_msgs/DiagnosticArray
+// from the liveness node) plus the bridge link state.
+//
+// We key health off each DiagnosticStatus.message ("online"/"offline"), NOT the
+// numeric `level`: `level` is a ROS byte that the egress JSON path serialises
+// as a control-char string, not a number, so it can't be compared to 0 here.
+export type HealthState = 'online' | 'offline' | 'unknown'
+
+// The ten rows the Link & Subsystems panel renders. `tether` is frontend-only
+// (derived from the bridge link); the nine glider rows are DiagnosticStatus
+// names emitted by py_pkg.liveness.liveness_node.
+export type SubsystemId =
+  | 'tether'
+  | 'acu_pitch'
+  | 'acu_roll'
+  | 'bcu_pump'
+  | 'bcu_valve_1'
+  | 'bcu_valve_2'
+  | 'imu_left'
+  | 'imu_right'
+  | 'external_pressure'
+  | 'tank_pressure'
+
+// diagnostic_msgs/DiagnosticStatus, trimmed to the fields the UI uses. `level`
+// is intentionally omitted -- see HealthState.
+export interface DiagnosticStatusMsg {
+  name: string
+  message: string
+  hardware_id: string
+}
+
+// diagnostic_msgs/DiagnosticArray on nautilus/status/liveness.
+export interface DiagnosticArrayMsg {
+  status: DiagnosticStatusMsg[]
+}

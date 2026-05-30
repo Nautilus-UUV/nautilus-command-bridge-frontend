@@ -2,16 +2,18 @@
 import { ref, computed } from 'vue'
 import SimpleCardWrapper from '@/components/SimpleCardWrapper.vue'
 import { useMqttBridgeStore } from '@/store/mqttBridge'
+import { useOverridesStore } from '@/store/overrides'
 import { storeToRefs } from 'pinia'
 
 // Mission IDs come from py_pkg/path/missions/factory.py. Don't reorder
 // without updating that file too -- the bridge passes mission_id straight
 // through, so the dropdown index here IS the ROS dispatch key.
-type MissionKey = 'trim' | 'sawtooth' | 'surface'
+type MissionKey = 'trim' | 'sawtooth' | 'surface' | 'doNothing'
 const MISSION_ID: Record<MissionKey, number> = {
   trim: 0,
   sawtooth: 1,
   surface: 2,
+  doNothing: 3,
 }
 
 interface ProfileOption {
@@ -21,9 +23,10 @@ interface ProfileOption {
 }
 
 const profileOptions: ProfileOption[] = [
-  { value: 'trim',     title: 'Trim & Neutral', hint: 'Hold a depth, zero pitch/roll. Does not self-terminate.' },
-  { value: 'sawtooth', title: 'Sawtooth',       hint: 'Glide down at -pitch, up at +pitch, for N cycles.' },
-  { value: 'surface',  title: 'Surface',        hint: 'Ascend to gauge 0 Pa and hold. Self-terminates.' },
+  { value: 'trim',      title: 'Trim & Neutral', hint: 'Hold a depth, zero pitch/roll. Does not self-terminate.' },
+  { value: 'sawtooth',  title: 'Sawtooth',       hint: 'Glide down at -pitch, up at +pitch, for N cycles.' },
+  { value: 'surface',   title: 'Surface',        hint: 'Ascend to gauge 0 Pa and hold. Self-terminates.' },
+  { value: 'doNothing', title: 'Do Nothing',     hint: 'Resets the controllers to their fresh, no-mission state, then commands nothing — the glider holds trim and drifts. Ends on Stop.' },
 ]
 
 // Source of truth is always Pa and rad -- the toggle below only changes
@@ -90,17 +93,17 @@ const angleUnitLabel    = computed(() => operatorUnits.value ? 'deg' : 'rad')
 const mqttStore = useMqttBridgeStore()
 const { connected, bridgeStatus } = storeToRefs(mqttStore)
 
-const statusBadge = computed(() => {
-  switch (bridgeStatus.value) {
-    case 'online':     return { label: 'bridge online',   tone: 'ok'   }
-    case 'offline':    return { label: 'bridge offline',  tone: 'warn' }
-    case 'link_lost':  return { label: 'tether lost',     tone: 'err'  }
-    case 'connecting': return { label: 'connecting...',   tone: 'warn' }
-  }
-})
+// Manual override and autonomous missions are mutually exclusive: while the
+// operator holds manual control the depth/ACU PIDs stand down, so a mission
+// would do nothing. Disable the whole profile to make the mode explicit.
+const overrides = useOverridesStore()
+const { manualOverride } = storeToRefs(overrides)
 
+// Link health moved to the Link & Subsystems panel (SubsystemHealthPanel.vue);
+// here bridgeStatus only gates Send so a mission can't be fired over a dead
+// tether.
 const sendDisabled = computed(() =>
-  !connected.value || bridgeStatus.value !== 'online'
+  !connected.value || bridgeStatus.value !== 'online' || manualOverride.value
 )
 
 function buildMissionCommand(): { mission_id: number; target_pressure_pa: number; angle_rad: number; n_resurfaces: number } {
@@ -118,6 +121,8 @@ function buildMissionCommand(): { mission_id: number; target_pressure_pa: number
       }
     case 'surface':
       return { ...base, mission_id: MISSION_ID.surface }
+    case 'doNothing':
+      return { ...base, mission_id: MISSION_ID.doNothing }
   }
 }
 
@@ -133,9 +138,19 @@ function onSend() {
 </script>
 
 <template>
-<SimpleCardWrapper title="Dive Profile" style="min-height: 400px">
+<SimpleCardWrapper title="Dive Profile">
 
-  <!-- Header row: profile picker + unit toggle + link status -->
+  <!-- Disabled while the operator holds manual control. Kept above the grayed
+       content so the reason stays readable. -->
+  <p v-if="manualOverride" class="override-banner">
+    <v-icon size="13" class="mr-1">mdi-hand-back-right-outline</v-icon>
+    Disabled — Manual Override active. Release it to run an autonomous mission.
+  </p>
+
+  <!-- Grayed out + non-interactive whenever manual override is on. -->
+  <div class="lock-target" :class="{ locked: manualOverride }">
+
+  <!-- Header row: profile picker + unit toggle -->
   <div class="header-row">
     <div class="profile-select-wrap">
       <v-select
@@ -147,6 +162,7 @@ function onSend() {
         v-model="selected"
         item-title="title"
         item-value="value"
+        :disabled="manualOverride"
       />
     </div>
     <button
@@ -169,48 +185,61 @@ function onSend() {
     <div v-if="selected === 'trim'" class="field-grid">
       <label>
         <span class="field-label">Target depth ({{ pressureUnitLabel }})</span>
-        <input type="number" v-model.number="trimPressureDisplay" :step="operatorUnits ? 0.1 : 100" />
+        <input type="number" v-model.number="trimPressureDisplay" :step="operatorUnits ? 0.1 : 100" :disabled="manualOverride" />
       </label>
     </div>
 
     <div v-else-if="selected === 'sawtooth'" class="field-grid">
       <label>
         <span class="field-label">Target depth ({{ pressureUnitLabel }})</span>
-        <input type="number" v-model.number="sawPressureDisplay" :step="operatorUnits ? 0.1 : 100" />
+        <input type="number" v-model.number="sawPressureDisplay" :step="operatorUnits ? 0.1 : 100" :disabled="manualOverride" />
       </label>
       <label>
         <span class="field-label">Pitch magnitude ({{ angleUnitLabel }})</span>
-        <input type="number" v-model.number="sawAngleDisplay" :step="operatorUnits ? 1 : 0.01" />
+        <input type="number" v-model.number="sawAngleDisplay" :step="operatorUnits ? 1 : 0.01" :disabled="manualOverride" />
       </label>
       <label>
         <span class="field-label">Cycles</span>
-        <input type="number" v-model.number="sawNResurfaces" min="0" step="1" />
+        <input type="number" v-model.number="sawNResurfaces" min="0" step="1" :disabled="manualOverride" />
       </label>
     </div>
 
-    <div v-else class="surface-note">
+    <div v-else-if="selected === 'surface'" class="surface-note">
       <v-icon size="20" style="color: var(--text-muted)">mdi-arrow-up-bold-outline</v-icon>
       <span>No parameters. Glider will ascend to gauge 0 Pa.</span>
     </div>
 
+    <div v-else class="surface-note">
+      <v-icon size="20" style="color: var(--text-muted)">mdi-power-sleep</v-icon>
+      <span>No parameters. Controllers reset to their fresh state and issue no commands; the glider holds trim and drifts.</span>
+    </div>
+
   </div>
 
-  <!-- Footer: link status + send -->
+  <!-- Footer: send -->
   <div class="footer-row">
-    <span class="status-badge" :class="statusBadge.tone">
-      <span class="status-dot" />
-      {{ statusBadge.label }}
-    </span>
     <button class="nb-btn accent-btn" @click="onSend" :disabled="sendDisabled">
       <v-icon size="12" class="mr-1">mdi-send</v-icon>
       Send
     </button>
   </div>
 
+  </div>
+
 </SimpleCardWrapper>
 </template>
 
 <style scoped>
+/* The lock wrapper takes over the card's flex column so the param-area still
+   grows and the footer stays pinned to the bottom (matches the old layout
+   where these were direct children of the card body). */
+.lock-target {
+  display: flex; flex-direction: column;
+  gap: 12px;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
 .header-row {
   display: flex; align-items: center; gap: 8px;
 }
@@ -235,6 +264,20 @@ function onSend() {
   color: var(--text-muted);
   line-height: 1.5;
   margin: 0;
+}
+
+.override-banner {
+  display: flex;
+  align-items: center;
+  margin: 0;
+  padding: 7px 9px;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--status-q-text, #b8860b);
+  background: var(--status-q-bg, rgba(255, 196, 0, 0.08));
+  border: 1px solid var(--status-q-border, rgba(255, 196, 0, 0.4));
+  border-radius: var(--radius-xs);
 }
 
 .param-area {
@@ -267,6 +310,7 @@ function onSend() {
   transition: border-color var(--transition);
 }
 .field-grid input:focus { border-color: var(--accent); }
+.field-grid input:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .surface-note {
   display: flex; align-items: center; gap: 10px;
@@ -278,26 +322,9 @@ function onSend() {
 }
 
 .footer-row {
-  display: flex; align-items: center; justify-content: space-between;
+  display: flex; align-items: center; justify-content: flex-end;
   gap: 8px;
   margin-top: auto;
-}
-
-.status-badge {
-  display: inline-flex; align-items: center; gap: 6px;
-  font-family: var(--font-mono); font-size: 10.5px; font-weight: 500;
-  letter-spacing: 0.04em;
-  padding: 3px 8px;
-  border: 1px solid;
-  border-radius: 2px;
-}
-.status-badge.ok   { background: var(--status-ok-bg);  color: var(--status-ok-text);  border-color: var(--status-ok-border); }
-.status-badge.warn { background: var(--status-q-bg);   color: var(--status-q-text);   border-color: var(--status-q-border); }
-.status-badge.err  { background: var(--status-err-bg); color: var(--status-err-text); border-color: var(--status-err-border); }
-
-.status-dot {
-  width: 6px; height: 6px; border-radius: 50%;
-  background: currentColor;
 }
 
 .nb-btn {
