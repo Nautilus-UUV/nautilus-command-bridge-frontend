@@ -19,7 +19,7 @@ const mqttBridge = useMqttBridgeStore()
 const overrides = useOverridesStore()
 const telemetry = useTelemetryStore()
 const { manualOverride } = storeToRefs(overrides)
-// bcuValves drives the valve buttons + the "valve 1 closed" warning;
+// bcuValves drives the valve buttons + the "valve 2 (motor) closed" warning;
 // bcuPressure drives both the live tank-pressure readout and the stop
 // condition the new pump-until-pressure section is closing the loop on.
 const { bcuValves, bcuPressure } = storeToRefs(telemetry)
@@ -45,7 +45,9 @@ function sendPump(action: 'inflate' | 'deflate') {
 // Closed-loop sibling of the timed pump: bcu_debug runs the motor until the
 // tank pressure crosses the target in the direction the RPM sign implies
 // (inflate -> tank drops -> stop when <=; deflate -> tank rises -> stop
-// when >=). The 30 s MAX_PUMP_S safety cap on the node side still applies.
+// when >=). No feasibility pre-check on the node side -- pick a target on the
+// reachable side using the live readout below; it runs until reached, until
+// you stop it, or until the node's MAX_PUMP_S runaway backstop fires.
 const pumpUntilRpm = ref<number>(500)
 const pumpUntilTargetPa = ref<number>(110000)
 
@@ -68,39 +70,43 @@ const currentTankPa = computed<number | null>(() => {
 
 // --- BCU valves --------------------------------------------------------
 // Two stateful toggles. Each click flips the effective state and publishes
-// the full bitmask (bit0 = v1, bit1 = v2) -- the node owns the wire, this
-// mirrors intent. Highlight + effective state come from valve1Open/valve2Open
-// below, which prefer real telemetry over local intent.
-const v1 = ref(false)
-const v2 = ref(false)
+// the full bitmask -- bit0 = the motor way (operator-facing "Valve 2", the
+// pump flow path), bit1 = the free/bypass way (operator-facing "Valve 1").
+// The bit assignment is unchanged from before; only the number we print on
+// each button changed to match the physical valve numbering. The node owns
+// the wire; this mirrors intent. Highlight + effective state come from
+// motorValveOpen/freeValveOpen below, which prefer real telemetry over intent.
+const motorIntent = ref(false)
+const freeIntent = ref(false)
 
 // Opening BOTH flow paths at once is unusual and risky, so the transition
 // into both-open is gated behind a confirmation pop-box. The pending target
 // state is stashed until the operator confirms; everything else (closing a
 // valve, opening just one) applies immediately.
 const showBothValvesWarning = ref(false)
-let pendingValves: { open1: boolean; open2: boolean } | null = null
+let pendingValves: { motor: boolean; free: boolean } | null = null
 
-function toggleValve(which: 1 | 2) {
-  const next1 = which === 1 ? !valve1Open.value : valve1Open.value
-  const next2 = which === 2 ? !valve2Open.value : valve2Open.value
-  const alreadyBothOpen = valve1Open.value && valve2Open.value
-  if (next1 && next2 && !alreadyBothOpen) {
-    pendingValves = { open1: next1, open2: next2 }
+function toggleValve(which: 'motor' | 'free') {
+  const nextMotor = which === 'motor' ? !motorValveOpen.value : motorValveOpen.value
+  const nextFree = which === 'free' ? !freeValveOpen.value : freeValveOpen.value
+  const alreadyBothOpen = motorValveOpen.value && freeValveOpen.value
+  if (nextMotor && nextFree && !alreadyBothOpen) {
+    pendingValves = { motor: nextMotor, free: nextFree }
     showBothValvesWarning.value = true
     return
   }
-  applyValves(next1, next2)
+  applyValves(nextMotor, nextFree)
 }
 
-function applyValves(open1: boolean, open2: boolean) {
-  v1.value = open1
-  v2.value = open2
-  mqttBridge.publish(VALVES_TOPIC, { data: (open1 ? 1 : 0) | (open2 ? 2 : 0) })
+function applyValves(motorOpen: boolean, freeOpen: boolean) {
+  motorIntent.value = motorOpen
+  freeIntent.value = freeOpen
+  // bit0 = motor way (Valve 2), bit1 = free/bypass way (Valve 1).
+  mqttBridge.publish(VALVES_TOPIC, { data: (motorOpen ? 1 : 0) | (freeOpen ? 2 : 0) })
 }
 
 function confirmBothValves() {
-  if (pendingValves) applyValves(pendingValves.open1, pendingValves.open2)
+  if (pendingValves) applyValves(pendingValves.motor, pendingValves.free)
   pendingValves = null
   showBothValvesWarning.value = false
 }
@@ -110,18 +116,19 @@ function cancelBothValves() {
   showBothValvesWarning.value = false
 }
 
-// Effective valve state: prefer the real telemetry value (bit0 = v1,
-// bit1 = v2); fall back to local intent before the first sample arrives.
-// Drives both the button highlight and the "valve 1 closed" pump warning.
-const valve1Open = computed(() => {
+// Effective valve state: prefer the real telemetry value (bit0 = motor way,
+// bit1 = free/bypass way); fall back to local intent before the first sample
+// arrives. Drives both the button highlight and the "motor valve closed" pump
+// warning.
+const motorValveOpen = computed(() => {
   const latest = bcuValves.value[0]?.value
   if (typeof latest === 'number') return (latest & 1) !== 0
-  return v1.value
+  return motorIntent.value
 })
-const valve2Open = computed(() => {
+const freeValveOpen = computed(() => {
   const latest = bcuValves.value[0]?.value
   if (typeof latest === 'number') return (latest & 2) !== 0
-  return v2.value
+  return freeIntent.value
 })
 
 // --- ACU position ------------------------------------------------------
@@ -173,9 +180,9 @@ function moveRoll() {
         Pump Out Bladder
       </button>
     </div>
-    <p v-if="!valve1Open" class="qc-warn">
+    <p v-if="!motorValveOpen" class="qc-warn">
       <v-icon size="12" class="mr-1">mdi-alert</v-icon>
-      Valve 1 (Motor) is closed — open it before pumping so the flow has a path.
+      Valve 2 (Motor) is closed — open it before pumping so the flow has a path.
     </p>
   </div>
 
@@ -207,9 +214,9 @@ function moveRoll() {
         Pump Out Bladder
       </button>
     </div>
-    <p v-if="!valve1Open" class="qc-warn">
+    <p v-if="!motorValveOpen" class="qc-warn">
       <v-icon size="12" class="mr-1">mdi-alert</v-icon>
-      Valve 1 (Motor) is closed — open it before pumping so the flow has a path.
+      Valve 2 (Motor) is closed — open it before pumping so the flow has a path.
     </p>
   </div>
 
@@ -217,11 +224,11 @@ function moveRoll() {
   <div class="qc-section">
     <div class="qc-section-label">BCU Valves</div>
     <div class="qc-grid qc-grid-2">
-      <button class="qc-btn" :class="{ active: valve1Open }" :disabled="!commandsEnabled" @click="toggleValve(1)">
-        Valve 1: Motor
+      <button class="qc-btn" :class="{ active: motorValveOpen }" :disabled="!commandsEnabled" @click="toggleValve('motor')">
+        Valve 2: Motor
       </button>
-      <button class="qc-btn" :class="{ active: valve2Open }" :disabled="!commandsEnabled" @click="toggleValve(2)">
-        Valve 2: Empty Pathway
+      <button class="qc-btn" :class="{ active: freeValveOpen }" :disabled="!commandsEnabled" @click="toggleValve('free')">
+        Valve 1: Empty Pathway
       </button>
     </div>
   </div>
@@ -260,7 +267,7 @@ function moveRoll() {
           Open both valves?
         </div>
         <p class="qc-modal-body">
-          This opens <strong>Valve 1 (Motor)</strong> and <strong>Valve 2 (Empty Pathway)</strong>
+          This opens <strong>Valve 2 (Motor)</strong> and <strong>Valve 1 (Empty Pathway)</strong>
           at the same time, connecting both flow paths. Only do this if you know what you're doing.
         </p>
         <div class="qc-modal-actions">

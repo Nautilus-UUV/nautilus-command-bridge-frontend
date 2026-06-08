@@ -205,11 +205,13 @@ export function useTelemetryCharts() {
   }))
 
   // BCU readouts. Pitch/roll come over the wire as Int16 in the controller's
-  // wire units; valves arrive as a bitmap (bit 0 = valve 1, bit 1 = valve 2).
+  // wire units; valves arrive as a bitmap -- bit 0 = the motor way (operator
+  // "Valve 2", the pump flow path), bit 1 = the free/bypass way (operator
+  // "Valve 1").
   const latestRpm = computed(() => bcuRpm.value[0]?.value ?? null)
   const latestValves = computed(() => bcuValves.value[0]?.value ?? null)
-  const valve1Open = computed(() => latestValves.value !== null && (latestValves.value & 1) !== 0)
-  const valve2Open = computed(() => latestValves.value !== null && (latestValves.value & 2) !== 0)
+  const motorValveOpen = computed(() => latestValves.value !== null && (latestValves.value & 1) !== 0)
+  const freeValveOpen = computed(() => latestValves.value !== null && (latestValves.value & 2) !== 0)
 
   // ── ACU strip chart (pitch mm + roll deg) ─────────────────────────────
   const newestPitch = computed(() => acuPitch.value.slice(0, WINDOW).reverse())
@@ -355,8 +357,8 @@ export function useTelemetryCharts() {
       yMax: bcuYMax,
       reset: bcuReset,
       latestRpm,
-      valve1Open,
-      valve2Open,
+      motorValveOpen,
+      freeValveOpen,
     },
     acu: {
       data: acuData,

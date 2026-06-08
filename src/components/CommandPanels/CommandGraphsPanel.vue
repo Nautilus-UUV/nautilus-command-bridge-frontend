@@ -22,7 +22,7 @@ const { bcu, acu, depth, tank } = useTelemetryCharts()
 // Nested refs (bcu.yMin etc.) don't auto-unwrap in the template, so flatten
 // each group to top-level bindings -- same pattern the Telemetry view uses.
 const { data: bcuChartData, options: bcuChartOptions, yMin: bcuYMin, yMax: bcuYMax,
-        reset: bcuReset, latestRpm, valve1Open, valve2Open } = bcu
+        reset: bcuReset, latestRpm, motorValveOpen, freeValveOpen } = bcu
 const { data: acuChartData, options: acuChartOptions, yMin: acuYMin, yMax: acuYMax,
         reset: acuReset, pitchMmText, rollDegText } = acu
 const { data: depthChartData, options: depthChartOptions, yMin: depthYMin, yMax: depthYMax,
@@ -49,8 +49,8 @@ const { data: tankChartData, options: tankChartOptions, yMin: tankYMin, yMax: ta
         <div class="kv-val mono">{{ latestRpm ?? '—' }}</div>
         <div class="kv-key">Valves</div>
         <div class="kv-val">
-          <span class="valve-led" :class="{ on: valve1Open }" title="Valve 1">V1</span>
-          <span class="valve-led" :class="{ on: valve2Open }" title="Valve 2">V2</span>
+          <span class="valve-led" :class="{ on: freeValveOpen }" title="Valve 1 (free way)">V1</span>
+          <span class="valve-led" :class="{ on: motorValveOpen }" title="Valve 2 (motor way)">V2</span>
         </div>
       </div>
       <div class="strip-body">
