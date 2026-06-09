@@ -4,7 +4,6 @@ import { storeToRefs } from 'pinia'
 import SimpleCardWrapper from "@/components/SimpleCardWrapper.vue"
 import { useMqttBridgeStore } from "@/store/mqttBridge"
 import { useTelemetryStore } from "@/store/telemetry"
-import { useOverridesStore } from "@/store/overrides"
 
 // All debug commands go MQTT-direct to the bridge, which materializes them
 // into ROS messages for the bcu_debug / acu_debug nodes. std_msgs scalars
@@ -16,19 +15,16 @@ const ACU_PITCH_TOPIC = 'nautilus/cmd/debug/acu/pitch'
 const ACU_ROLL_TOPIC = 'nautilus/cmd/debug/acu/roll'
 
 const mqttBridge = useMqttBridgeStore()
-const overrides = useOverridesStore()
 const telemetry = useTelemetryStore()
-const { manualOverride } = storeToRefs(overrides)
 // bcuValves drives the valve buttons + the "valve 2 (motor) closed" warning;
 // bcuPressure drives both the live tank-pressure readout and the stop
 // condition the new pump-until-pressure section is closing the loop on.
 const { bcuValves, bcuPressure } = storeToRefs(telemetry)
 const bridgeOnline = computed(() => mqttBridge.bridgeStatus === 'online')
-// Debug commands are locked behind the Manual Override slider: the bridge must
-// be up AND the operator must have taken manual control. Without the override
-// the debug nodes stay silent and the PIDs own the actuators, so a command
-// here would be dropped -- disable the controls to make that explicit.
-const commandsEnabled = computed(() => bridgeOnline.value && manualOverride.value)
+// Gated only on the bridge being up now -- there's no override slider.
+// Engaging any command first stops the active mission (see engageManual) so
+// the controllers go silent and don't race the debug node on the wire.
+const commandsEnabled = computed(() => bridgeOnline.value)
 
 // --- BCU pump (RPM for X seconds) --------------------------------------
 const pumpRpm = ref<number>(500)
@@ -38,7 +34,9 @@ function sendPump(action: 'inflate' | 'deflate') {
   // Positive RPM pumps oil INTO the bladder -> it inflates -> the glider
   // rises. Negative RPM pumps oil OUT -> deflates -> it sinks.
   const rpm = action === 'inflate' ? Math.abs(pumpRpm.value) : -Math.abs(pumpRpm.value)
-  mqttBridge.publish(PUMP_TOPIC, { rpm, duration_s: pumpSeconds.value })
+  mqttBridge.engageManual(() =>
+    mqttBridge.publish(PUMP_TOPIC, { rpm, duration_s: pumpSeconds.value }),
+  )
 }
 
 // --- BCU pump (RPM until tank pressure Y) ------------------------------
@@ -55,10 +53,12 @@ function sendPumpUntilPressure(action: 'inflate' | 'deflate') {
   const rpm = action === 'inflate'
     ? Math.abs(pumpUntilRpm.value)
     : -Math.abs(pumpUntilRpm.value)
-  mqttBridge.publish(PUMP_UNTIL_TOPIC, {
-    rpm,
-    target_pressure_pa: Math.round(pumpUntilTargetPa.value),
-  })
+  mqttBridge.engageManual(() =>
+    mqttBridge.publish(PUMP_UNTIL_TOPIC, {
+      rpm,
+      target_pressure_pa: Math.round(pumpUntilTargetPa.value),
+    }),
+  )
 }
 
 // Live tank-pressure readout for operator context (same stream the section
@@ -102,7 +102,9 @@ function applyValves(motorOpen: boolean, freeOpen: boolean) {
   motorIntent.value = motorOpen
   freeIntent.value = freeOpen
   // bit0 = motor way (Valve 2), bit1 = free/bypass way (Valve 1).
-  mqttBridge.publish(VALVES_TOPIC, { data: (motorOpen ? 1 : 0) | (freeOpen ? 2 : 0) })
+  mqttBridge.engageManual(() =>
+    mqttBridge.publish(VALVES_TOPIC, { data: (motorOpen ? 1 : 0) | (freeOpen ? 2 : 0) }),
+  )
 }
 
 function confirmBothValves() {
@@ -137,25 +139,29 @@ const rollDeg = ref<number>(0)
 
 function movePitch() {
   // ACU_PITCH wire format is Int16 millimetres.
-  mqttBridge.publish(ACU_PITCH_TOPIC, { data: Math.round(pitchMm.value) })
+  mqttBridge.engageManual(() =>
+    mqttBridge.publish(ACU_PITCH_TOPIC, { data: Math.round(pitchMm.value) }),
+  )
 }
 function moveRoll() {
   // ACU_ROLL wire format is Int16 centidegrees (degrees * 100).
-  mqttBridge.publish(ACU_ROLL_TOPIC, { data: Math.round(rollDeg.value * 100) })
+  mqttBridge.engageManual(() =>
+    mqttBridge.publish(ACU_ROLL_TOPIC, { data: Math.round(rollDeg.value * 100) }),
+  )
 }
 </script>
 
 <template>
 <SimpleCardWrapper title="Debug Commands">
 
-  <!-- Locked until the operator takes manual control via the slider above. -->
-  <p v-if="bridgeOnline && !manualOverride" class="qc-locked-hint">
-    <v-icon size="12" class="mr-1">mdi-lock-outline</v-icon>
-    Enable Manual Override to send debug commands.
+  <!-- Any command here stops the active mission first, then drives the
+       actuator via the debug node. -->
+  <p v-if="bridgeOnline" class="qc-hint">
+    <v-icon size="12" class="mr-1">mdi-information-outline</v-icon>
+    Sending any command here stops the active mission.
   </p>
 
-  <!-- Grayed out + non-interactive whenever manual override is off. -->
-  <div class="lock-target" :class="{ locked: !manualOverride }">
+  <div class="lock-target">
 
   <!-- BCU pump -->
   <div class="qc-section">
@@ -289,7 +295,7 @@ function moveRoll() {
 .qc-section { margin-bottom: 10px; }
 .qc-section:last-child { margin-bottom: 0; }
 
-.qc-locked-hint {
+.qc-hint {
   display: flex;
   align-items: center;
   margin: 0 0 10px;

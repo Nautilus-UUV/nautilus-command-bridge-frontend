@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import EmergencySurfaceButton from "@/components/CommandPanels/EmergencySurfaceButton.vue";
-import ManualOverrideSlider from "@/components/CommandPanels/ManualOverrideSlider.vue";
+import ResetButton from "@/components/CommandPanels/ResetButton.vue";
 import DebugCommandsPanel from "@/components/CommandPanels/DebugCommandsPanel.vue";
 import CommandGraphsPanel from "@/components/CommandPanels/CommandGraphsPanel.vue";
 import CommandProfilePanel from "@/components/CommandPanels/CommandProfilePanel.vue";
@@ -11,9 +11,9 @@ import SubsystemHealthPanel from "@/components/CommandPanels/SubsystemHealthPane
   <div class="command-grid pa-3">
     <div class="command-emergency">
       <EmergencySurfaceButton/>
+      <ResetButton/>
     </div>
     <div class="command-debug">
-      <ManualOverrideSlider/>
       <DebugCommandsPanel/>
     </div>
     <div class="command-profiles">
@@ -43,7 +43,7 @@ import SubsystemHealthPanel from "@/components/CommandPanels/SubsystemHealthPane
   width: 100%;
 }
 
-.command-emergency { grid-area: 1 / 1 / 2 / 2; }
+.command-emergency { grid-area: 1 / 1 / 2 / 2; display: flex; flex-direction: column; gap: 10px; }
 .command-debug     { grid-area: 2 / 1 / 3 / 2; display: flex; flex-direction: column; gap: 10px; }
 .command-profiles  { grid-area: 3 / 1 / 4 / 2; }
 .command-health    { grid-area: 4 / 1 / 5 / 2; }

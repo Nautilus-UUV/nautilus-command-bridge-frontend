@@ -2,18 +2,16 @@
 import { ref, computed } from 'vue'
 import SimpleCardWrapper from '@/components/SimpleCardWrapper.vue'
 import { useMqttBridgeStore } from '@/store/mqttBridge'
-import { useOverridesStore } from '@/store/overrides'
 import { storeToRefs } from 'pinia'
 
 // Mission IDs come from py_pkg/path/missions/factory.py. Don't reorder
 // without updating that file too -- the bridge passes mission_id straight
 // through, so the dropdown index here IS the ROS dispatch key.
-type MissionKey = 'trim' | 'sawtooth' | 'surface' | 'doNothing'
+type MissionKey = 'trim' | 'sawtooth' | 'surface'
 const MISSION_ID: Record<MissionKey, number> = {
   trim: 0,
   sawtooth: 1,
   surface: 2,
-  doNothing: 3,
 }
 
 interface ProfileOption {
@@ -26,7 +24,6 @@ const profileOptions: ProfileOption[] = [
   { value: 'trim',      title: 'Trim & Neutral', hint: 'Hold a depth, zero pitch/roll. Does not self-terminate.' },
   { value: 'sawtooth',  title: 'Sawtooth',       hint: 'Glide down at -pitch, up at +pitch, for N cycles.' },
   { value: 'surface',   title: 'Surface',        hint: 'Ascend to gauge 0 Pa and hold. Self-terminates.' },
-  { value: 'doNothing', title: 'Do Nothing',     hint: 'Resets the controllers to their fresh, no-mission state, then commands nothing — the glider holds trim and drifts. Ends on Stop.' },
 ]
 
 // Source of truth is always Pa and rad -- the toggle below only changes
@@ -93,17 +90,10 @@ const angleUnitLabel    = computed(() => operatorUnits.value ? 'deg' : 'rad')
 const mqttStore = useMqttBridgeStore()
 const { connected, bridgeStatus } = storeToRefs(mqttStore)
 
-// Manual override and autonomous missions are mutually exclusive: while the
-// operator holds manual control the depth/ACU PIDs stand down, so a mission
-// would do nothing. Disable the whole profile to make the mode explicit.
-const overrides = useOverridesStore()
-const { manualOverride } = storeToRefs(overrides)
-
-// Link health moved to the Link & Subsystems panel (SubsystemHealthPanel.vue);
-// here bridgeStatus only gates Send so a mission can't be fired over a dead
-// tether.
+// bridgeStatus gates Send/Stop so commands can't be fired over a dead tether.
+// (Link health lives in the Link & Subsystems panel, SubsystemHealthPanel.vue.)
 const sendDisabled = computed(() =>
-  !connected.value || bridgeStatus.value !== 'online' || manualOverride.value
+  !connected.value || bridgeStatus.value !== 'online'
 )
 
 function buildMissionCommand(): { mission_id: number; target_pressure_pa: number; angle_rad: number; n_resurfaces: number } {
@@ -121,34 +111,27 @@ function buildMissionCommand(): { mission_id: number; target_pressure_pa: number
       }
     case 'surface':
       return { ...base, mission_id: MISSION_ID.surface }
-    case 'doNothing':
-      return { ...base, mission_id: MISSION_ID.doNothing }
   }
 }
 
 function onSend() {
   if (sendDisabled.value) return
-  const cmd = buildMissionCommand()
-  // /path first so the pathfinder is in LOADED state before /command:start
-  // arrives. They're QoS 1 so reordering is unlikely, but ordering the
-  // publish calls is free insurance.
-  mqttStore.publish('nautilus/cmd/path', cmd)
-  mqttStore.publish('nautilus/cmd/command', { data: 'start' })
+  // startMission clears any lingering debug hold, loads /path, then starts
+  // (Bool true on /command). Ordering is handled in the store.
+  mqttStore.startMission(buildMissionCommand())
+}
+
+function onStop() {
+  if (sendDisabled.value) return
+  // Bool false on /command: stop the mission and reset the stack to idle.
+  mqttStore.stopMission()
 }
 </script>
 
 <template>
 <SimpleCardWrapper title="Dive Profile">
 
-  <!-- Disabled while the operator holds manual control. Kept above the grayed
-       content so the reason stays readable. -->
-  <p v-if="manualOverride" class="override-banner">
-    <v-icon size="13" class="mr-1">mdi-hand-back-right-outline</v-icon>
-    Disabled — Manual Override active. Release it to run an autonomous mission.
-  </p>
-
-  <!-- Grayed out + non-interactive whenever manual override is on. -->
-  <div class="lock-target" :class="{ locked: manualOverride }">
+  <div class="lock-target">
 
   <!-- Header row: profile picker + unit toggle -->
   <div class="header-row">
@@ -162,7 +145,6 @@ function onSend() {
         v-model="selected"
         item-title="title"
         item-value="value"
-        :disabled="manualOverride"
       />
     </div>
     <button
@@ -185,22 +167,22 @@ function onSend() {
     <div v-if="selected === 'trim'" class="field-grid">
       <label>
         <span class="field-label">Target depth ({{ pressureUnitLabel }})</span>
-        <input type="number" v-model.number="trimPressureDisplay" :step="operatorUnits ? 0.1 : 100" :disabled="manualOverride" />
+        <input type="number" v-model.number="trimPressureDisplay" :step="operatorUnits ? 0.1 : 100" />
       </label>
     </div>
 
     <div v-else-if="selected === 'sawtooth'" class="field-grid">
       <label>
         <span class="field-label">Target depth ({{ pressureUnitLabel }})</span>
-        <input type="number" v-model.number="sawPressureDisplay" :step="operatorUnits ? 0.1 : 100" :disabled="manualOverride" />
+        <input type="number" v-model.number="sawPressureDisplay" :step="operatorUnits ? 0.1 : 100" />
       </label>
       <label>
         <span class="field-label">Pitch magnitude ({{ angleUnitLabel }})</span>
-        <input type="number" v-model.number="sawAngleDisplay" :step="operatorUnits ? 1 : 0.01" :disabled="manualOverride" />
+        <input type="number" v-model.number="sawAngleDisplay" :step="operatorUnits ? 1 : 0.01" />
       </label>
       <label>
         <span class="field-label">Cycles</span>
-        <input type="number" v-model.number="sawNResurfaces" min="0" step="1" :disabled="manualOverride" />
+        <input type="number" v-model.number="sawNResurfaces" min="0" step="1" />
       </label>
     </div>
 
@@ -209,15 +191,14 @@ function onSend() {
       <span>No parameters. Glider will ascend to gauge 0 Pa.</span>
     </div>
 
-    <div v-else class="surface-note">
-      <v-icon size="20" style="color: var(--text-muted)">mdi-power-sleep</v-icon>
-      <span>No parameters. Controllers reset to their fresh state and issue no commands; the glider holds trim and drifts.</span>
-    </div>
-
   </div>
 
-  <!-- Footer: send -->
+  <!-- Footer: stop + send -->
   <div class="footer-row">
+    <button class="nb-btn stop-btn" @click="onStop" :disabled="sendDisabled">
+      <v-icon size="12" class="mr-1">mdi-stop</v-icon>
+      Stop
+    </button>
     <button class="nb-btn accent-btn" @click="onSend" :disabled="sendDisabled">
       <v-icon size="12" class="mr-1">mdi-send</v-icon>
       Send
@@ -264,20 +245,6 @@ function onSend() {
   color: var(--text-muted);
   line-height: 1.5;
   margin: 0;
-}
-
-.override-banner {
-  display: flex;
-  align-items: center;
-  margin: 0;
-  padding: 7px 9px;
-  font-family: var(--font-ui);
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--status-q-text, #b8860b);
-  background: var(--status-q-bg, rgba(255, 196, 0, 0.08));
-  border: 1px solid var(--status-q-border, rgba(255, 196, 0, 0.4));
-  border-radius: var(--radius-xs);
 }
 
 .param-area {
@@ -345,4 +312,10 @@ function onSend() {
   background: var(--accent); border-color: var(--accent); color: #fff;
 }
 .accent-btn:hover:not(:disabled) { filter: brightness(1.1); color: #fff; }
+
+.stop-btn {
+  background: var(--status-err-bg); border-color: var(--status-err-border);
+  color: var(--status-err-text);
+}
+.stop-btn:hover:not(:disabled) { filter: brightness(1.06); color: var(--status-err-text); }
 </style>

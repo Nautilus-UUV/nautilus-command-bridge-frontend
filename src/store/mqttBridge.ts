@@ -26,6 +26,11 @@ export type TelemetryHandler = (payload: unknown, topic: string) => void
 // Topic the bridge retains its liveness state on (mqtt_bridge_node.py).
 const STATUS_TOPIC = 'nautilus/status/bridge'
 
+// Command topics the UI publishes into (mqtt_bridge_node.py ingress).
+const CMD_COMMAND = 'nautilus/cmd/command'
+const CMD_PATH = 'nautilus/cmd/path'
+const CMD_DEBUG_RESET = 'nautilus/cmd/debug/reset'
+
 // Default broker URL. Override via VITE_MQTT_URL (set in .env or .env.local)
 // when running against a non-localhost broker -- e.g. ws://<laptop-ip>:9001
 // from a separate machine on the tethered LAN.
@@ -114,6 +119,42 @@ export const useMqttBridgeStore = defineStore('mqttBridge', () => {
     })
   }
 
+  // --- mission / debug command helpers --------------------------------
+  // Centralized here (the only place that knows MQTT exists) so panels don't
+  // duplicate topic strings or the "stop the mission before driving an
+  // actuator" sequencing. /command is std_msgs/Bool on the glider side:
+  // true = start the loaded mission, false = stop + reset to a clean idle.
+
+  // Stop the active mission and reset the stack to its clean initial state
+  // (no RPM, valves closed, controllers silent). Idempotent.
+  function stopMission(): void {
+    publish(CMD_COMMAND, { data: false })
+  }
+
+  // Start a mission: clear any lingering manual/debug hold first (so it can't
+  // fight the controllers once they drive), load the mission, then run it. The
+  // leading /debug/reset also cancels an in-progress emergency surface -- an
+  // accepted edge, since the emergency control is separate and prominent.
+  function startMission(cmd: object): void {
+    publish(CMD_DEBUG_RESET, {})
+    publish(CMD_PATH, cmd)
+    publish(CMD_COMMAND, { data: true })
+  }
+
+  // Run a manual/debug command: stop the active mission first so the
+  // controllers go silent and don't race the debug node on the wire.
+  function engageManual(run: () => void): void {
+    stopMission()
+    run()
+  }
+
+  // Red all-stop: stop the mission (controllers reset to safe-silent) AND
+  // all-stop both debug nodes (zero RPM, close valves, neutral ACU).
+  function resetAll(): void {
+    stopMission()
+    publish(CMD_DEBUG_RESET, {})
+  }
+
   // Subscribe a handler to a telemetry topic. The first handler for a
   // topic triggers an MQTT SUBSCRIBE; further handlers piggy-back. The
   // returned function removes that handler (and the broker subscription
@@ -150,5 +191,9 @@ export const useMqttBridgeStore = defineStore('mqttBridge', () => {
     bridgeStatus: readonly(bridgeStatus),
     publish,
     subscribe,
+    stopMission,
+    startMission,
+    engageManual,
+    resetAll,
   }
 })

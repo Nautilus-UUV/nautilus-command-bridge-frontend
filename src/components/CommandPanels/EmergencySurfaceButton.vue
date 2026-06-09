@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useMqttBridgeStore } from '@/store/mqttBridge'
-import { useOverridesStore } from '@/store/overrides'
 
 // Slide-to-activate (the "slide to power off" pattern). The deliberate drag
 // IS the confirmation -- no dialog. Idle rests on the left; drag past the
@@ -13,7 +12,6 @@ const THRESHOLD = 0.9
 const THUMB_W = 56 // px -- keep in sync with .es-thumb width in CSS
 
 const mqtt = useMqttBridgeStore()
-const overrides = useOverridesStore()
 const bridgeOnline = computed(() => mqtt.bridgeStatus === 'online')
 
 const trackEl = ref<HTMLElement | null>(null)
@@ -66,10 +64,9 @@ function onPointerUp(e: PointerEvent) {
   const frac = maxX.value > 0 ? thumbX.value / maxX.value : 0
   if (!armed.value && frac >= THRESHOLD) {
     armed.value = true
-    // Take manual control first so depth_node stands down before bcu_debug
+    // Stop the active mission first so depth_node goes silent before bcu_debug
     // blows ballast -- otherwise the depth PID would fight the surface burst.
-    // We leave the override up after a cancel (operator releases deliberately).
-    overrides.setManualOverride(true)
+    mqtt.stopMission()
     mqtt.publish(EMERGENCY_TOPIC, { data: true })
   } else if (armed.value && frac <= 1 - THRESHOLD) {
     armed.value = false
