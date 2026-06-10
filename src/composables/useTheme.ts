@@ -1,10 +1,11 @@
 import { ref, watch } from 'vue'
 
+// Default to dark: the mission-control dashboard is designed dark-first, so a
+// fresh client (no stored preference) boots into it regardless of OS setting.
+// An explicit 'light' choice still sticks via localStorage.
 const isDark = ref(
-  typeof window !== 'undefined' &&
-  (localStorage.getItem('nautilus-theme') === 'dark' ||
-    (localStorage.getItem('nautilus-theme') == null &&
-     window.matchMedia('(prefers-color-scheme: dark)').matches))
+  typeof window === 'undefined' ||
+  localStorage.getItem('nautilus-theme') !== 'light'
 )
 
 function applyTheme() {

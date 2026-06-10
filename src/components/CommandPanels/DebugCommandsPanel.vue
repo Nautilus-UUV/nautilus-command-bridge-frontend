@@ -163,6 +163,25 @@ function moveRoll() {
 
   <div class="lock-target">
 
+  <!-- BCU valves -->
+  <div class="qc-section">
+    <div class="qc-section-label">BCU Valves</div>
+    <div class="qc-grid qc-grid-2">
+      <button class="qc-btn" :class="{ active: motorValveOpen }" :disabled="!commandsEnabled" @click="toggleValve('motor')">
+        Valve 2: Motor
+      </button>
+      <button class="qc-btn" :class="{ active: freeValveOpen }" :disabled="!commandsEnabled" @click="toggleValve('free')">
+        Valve 1: Empty Pathway
+      </button>
+    </div>
+    <!-- Single global valve-state caveat: Valve 2 (Motor) gates both pump modes
+         below, so the warning lives here once rather than repeated per section. -->
+    <p v-if="!motorValveOpen" class="qc-warn">
+      <v-icon size="12" class="mr-1">mdi-alert</v-icon>
+      Valve 2 (Motor) is closed — open it before pumping so the flow has a path.
+    </p>
+  </div>
+
   <!-- BCU pump -->
   <div class="qc-section">
     <div class="qc-section-label">BCU Pump (RPM for X seconds)</div>
@@ -186,10 +205,6 @@ function moveRoll() {
         Pump Out Bladder
       </button>
     </div>
-    <p v-if="!motorValveOpen" class="qc-warn">
-      <v-icon size="12" class="mr-1">mdi-alert</v-icon>
-      Valve 2 (Motor) is closed — open it before pumping so the flow has a path.
-    </p>
   </div>
 
   <!-- BCU pump until tank pressure -->
@@ -218,23 +233,6 @@ function moveRoll() {
       <button class="qc-btn" :disabled="!commandsEnabled" @click="sendPumpUntilPressure('deflate')">
         <v-icon size="11" class="mr-1">mdi-arrow-down-bold</v-icon>
         Pump Out Bladder
-      </button>
-    </div>
-    <p v-if="!motorValveOpen" class="qc-warn">
-      <v-icon size="12" class="mr-1">mdi-alert</v-icon>
-      Valve 2 (Motor) is closed — open it before pumping so the flow has a path.
-    </p>
-  </div>
-
-  <!-- BCU valves -->
-  <div class="qc-section">
-    <div class="qc-section-label">BCU Valves</div>
-    <div class="qc-grid qc-grid-2">
-      <button class="qc-btn" :class="{ active: motorValveOpen }" :disabled="!commandsEnabled" @click="toggleValve('motor')">
-        Valve 2: Motor
-      </button>
-      <button class="qc-btn" :class="{ active: freeValveOpen }" :disabled="!commandsEnabled" @click="toggleValve('free')">
-        Valve 1: Empty Pathway
       </button>
     </div>
   </div>
@@ -288,18 +286,30 @@ function moveRoll() {
 </template>
 
 <style scoped>
-/* Mirror the card body's flex gap so wrapping the sections in .lock-target
-   doesn't change their spacing. */
-.lock-target { display: flex; flex-direction: column; gap: 12px; }
+/* Fill the card body; the sections stack from the top, each block fenced off
+   from the next by a hairline divider (see .qc-section + .qc-section) so the
+   panel reads as four delimited groups -- BCU valves, the two pump modes, ACU. */
+.lock-target {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  justify-content: flex-start;
+  gap: 0;
+}
 
-.qc-section { margin-bottom: 10px; }
-.qc-section:last-child { margin-bottom: 0; }
+/* Small horizontal bar between consecutive debug blocks. */
+.qc-section + .qc-section {
+  margin-top: 7px;
+  padding-top: 7px;
+  border-top: 1px solid var(--border);
+}
 
 .qc-hint {
   display: flex;
   align-items: center;
-  margin: 0 0 10px;
-  padding: 6px 8px;
+  margin: 0 0 6px;
+  padding: 5px 8px;
   font-family: var(--font-ui);
   font-size: 10.5px;
   color: var(--text-hint);
@@ -314,11 +324,11 @@ function moveRoll() {
   justify-content: space-between;
   gap: 8px;
   font-family: var(--font-ui);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: var(--text-hint);
+  color: var(--text-muted);
   margin-bottom: 6px;
 }
 
@@ -347,7 +357,7 @@ function moveRoll() {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 7px 6px;
+  padding: 6px 6px;
   font-family: var(--font-ui);
   font-size: 11px;
   font-weight: 500;
@@ -382,9 +392,12 @@ function moveRoll() {
 
 .qc-pump-inputs {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  /* Stacked one-per-row, not two columns: a cramped 1fr|1fr pair couldn't
+     shrink below the number inputs' intrinsic width, so the right box (Seconds /
+     Tank Target) spilled past the panel edge. Full-width rows can't clip. */
+  grid-template-columns: 1fr;
   gap: 5px;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
 }
 
 .qc-input-group {
@@ -395,12 +408,14 @@ function moveRoll() {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--text-hint);
-  gap: 3px;
+  color: var(--text-muted);
+  gap: 2px;
 }
 
 .qc-input-group input {
-  padding: 5px 6px;
+  width: 100%;
+  min-width: 0;
+  padding: 4px 6px;
   font-family: var(--font-ui);
   font-size: 11px;
   font-weight: 500;
@@ -419,7 +434,7 @@ function moveRoll() {
   display: flex;
   align-items: flex-end;
   gap: 5px;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
 }
 .qc-acu-input { flex: 1; }
 .qc-acu-btn { flex: 0 0 auto; }
@@ -427,8 +442,8 @@ function moveRoll() {
 .qc-warn {
   display: flex;
   align-items: center;
-  margin: 6px 0 0;
-  padding: 6px 8px;
+  margin: 4px 0 0;
+  padding: 5px 8px;
   font-family: var(--font-ui);
   font-size: 10.5px;
   line-height: 1.4;

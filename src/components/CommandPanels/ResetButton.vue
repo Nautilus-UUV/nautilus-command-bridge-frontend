@@ -22,35 +22,36 @@ function onReset() {
     @click="onReset"
     title="Stop the mission and all-stop every debug actuator"
   >
-    <v-icon size="18" class="mr-2">mdi-restart</v-icon>
+    <v-icon size="13" class="mr-1">mdi-restart</v-icon>
     {{ bridgeOnline ? 'Reset' : 'bridge offline' }}
   </button>
 </template>
 
 <style scoped>
+/* Deliberately understated -- this is the quiet all-stop, not the headline
+   action. Ghost button in muted ink; danger intent only surfaces on hover. */
 .reset-btn {
   display: flex;
   align-items: center;
   justify-content: center;
   width: 100%;
-  height: 44px;
-  border-radius: 6px;
+  height: 30px;
+  border-radius: var(--radius-xs);
   font-family: var(--font-ui);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
   cursor: pointer;
-  color: var(--status-err-text, #dc2626);
-  background: var(--status-err-bg, rgba(220, 38, 38, 0.12));
-  border: 1px solid var(--status-err-border, rgba(220, 38, 38, 0.5));
+  color: var(--text-hint);
+  background: transparent;
+  border: 1px solid var(--border-btn);
   transition: background var(--transition), border-color var(--transition),
     color var(--transition);
 }
 .reset-btn:hover:not(:disabled) {
-  background: var(--status-err-border, rgba(220, 38, 38, 0.5));
-  border-color: var(--status-err-text, #dc2626);
-  color: #fff;
+  color: var(--status-err-text);
+  border-color: var(--status-err-border);
+  background: var(--bg-btn);
 }
 .reset-btn:active:not(:disabled) {
   filter: brightness(0.95);
@@ -59,7 +60,7 @@ function onReset() {
   opacity: 0.5;
   cursor: not-allowed;
   color: var(--text-hint);
-  background: var(--bg-btn);
+  background: transparent;
   border-color: var(--border-btn);
 }
 </style>

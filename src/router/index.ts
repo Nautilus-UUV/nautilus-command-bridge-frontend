@@ -1,6 +1,9 @@
 // Composables
 import { createRouter, createWebHashHistory } from 'vue-router'
 
+// Single-page mission-control dashboard. The old Telemetry / Commands /
+// Simulations / Debug tabs were collapsed into one view -- there is only the
+// dashboard now, wrapped in the default app shell.
 const routes = [
   {
     path: '/',
@@ -8,23 +11,8 @@ const routes = [
     children: [
       {
         path: '',
-        name: 'Charts',
-        component: () => import('@/views/Charts.vue'),
-      },
-      {
-        path: 'commands',
-        name: 'Commands',
-        component: () => import('@/views/Commands.vue'),
-      },
-      {
-        path: 'simulations',
-        name: 'Simulations',
-        component: () => import('@/views/Simulations.vue'),
-      },
-      {
-        path: 'debug',
-        name: 'Debug',
-        component: () => import('@/views/Debug.vue'),
+        name: 'Dashboard',
+        component: () => import('@/views/Dashboard.vue'),
       },
     ],
   },

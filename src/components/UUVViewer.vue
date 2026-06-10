@@ -1,66 +1,66 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, watch, computed } from 'vue'
+import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js'
 import { useTheme } from '@/composables/useTheme'
 
-const props = defineProps<{
-  qw: number
-  qx: number
-  qy: number
-  qz: number
-  depth: number
-}>()
+// Central stage element: the UUV model suspended inside a gyroscope cage --
+// three orthogonal gimbal rings + a faint wireframe shell. Orientation is held
+// STATIC for now (identity quaternion default); the qw/qx/qy/qz props are kept
+// so wiring the cage to a live IMU attitude later is a one-line change at the
+// call site. Drag orbits the camera; the model and cage themselves don't move.
+const props = withDefaults(
+  defineProps<{
+    qw?: number
+    qx?: number
+    qy?: number
+    qz?: number
+  }>(),
+  { qw: 1, qx: 0, qy: 0, qz: 0 },
+)
 
 const { isDark } = useTheme()
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 
 // ── Three.js state (not reactive) ──────────────────────────────────────
-let renderer:    THREE.WebGLRenderer
-let scene:       THREE.Scene
-let camera:      THREE.PerspectiveCamera
-let controls:    OrbitControls
-let uuvMesh:     THREE.Object3D
-let gridHelper:  THREE.GridHelper
-let ambLight:    THREE.AmbientLight
-let dirLight1:   THREE.DirectionalLight
-let dirLight2:   THREE.DirectionalLight
-let animId:      number
-let ro:          ResizeObserver
+let renderer:  THREE.WebGLRenderer
+let scene:     THREE.Scene
+let camera:    THREE.PerspectiveCamera
+let controls:  OrbitControls
+let uuvMesh:   THREE.Object3D
+let gyroGroup: THREE.Group
+let gyroRadius = 0   // bounding-sphere radius of the cage; drives camera framing
+let ambLight:  THREE.AmbientLight
+let dirLight1: THREE.DirectionalLight
+let dirLight2: THREE.DirectionalLight
+let animId:    number
+let ro:        ResizeObserver
 
-// Camera distance config
-const DEFAULT_DIST = 7.0
-const MIN_DIST     = DEFAULT_DIST / 2   // 2× closer
-const MAX_DIST     = DEFAULT_DIST * 2   // 2× farther
-const ZOOM_STEP    = 1.2
-
-// ── Euler angles from quaternion ────────────────────────────────────────
-const rollDeg = computed(() => {
-  const { qw, qx, qy, qz } = props
-  const sinr = 2 * (qw * qx + qy * qz)
-  const cosr = 1 - 2 * (qx * qx + qy * qy)
-  return (Math.atan2(sinr, cosr) * 180 / Math.PI).toFixed(1)
-})
-const pitchDeg = computed(() => {
-  const { qw, qx, qy, qz } = props
-  const sinp = 2 * (qw * qy - qz * qx)
-  const clamped = Math.abs(sinp) >= 1 ? Math.sign(sinp) * Math.PI / 2 : Math.asin(sinp)
-  return (clamped * 180 / Math.PI).toFixed(1)
-})
-const yawDeg = computed(() => {
-  const { qw, qx, qy, qz } = props
-  const siny = 2 * (qw * qz + qx * qy)
-  const cosy = 1 - 2 * (qy * qy + qz * qz)
-  return (Math.atan2(siny, cosy) * 180 / Math.PI).toFixed(1)
-})
+// The camera distance is NOT fixed -- it's recomputed per canvas aspect in
+// frameGyro() so the whole gyro sphere stays framed even when the stage canvas
+// turns portrait on a narrow window (a fixed distance clipped the sphere
+// left/right). DEFAULT_DIST only seeds the initial view *direction*; its
+// magnitude is overwritten on the first resize. FIT_MARGIN > 1 leaves a clear
+// gap between the sphere and the canvas edges. BOTTOM_MARGIN_FRAC is how far
+// (in sphere radii) the cage floats off the lower edge once frameGyro pushes it
+// down to hug the init bar on a portrait canvas.
+const DEFAULT_DIST       = 14
+const FIT_MARGIN         = 1.08
+const BOTTOM_MARGIN_FRAC = 0.16
 
 // ── Color helpers ────────────────────────────────────────────────────────
 const C = {
-  bg:       () => isDark.value ? 0x0f0f16 : 0xf0f0f4,
-  grid:     () => isDark.value ? 0x282840 : 0xccccde,
-  ambient:  () => isDark.value ? 0x303050 : 0x909099,
-  dirLight: () => isDark.value ? 0xaab8d0 : 0xffffff,
+  // Match the page --bg in both themes so the (now narrower) canvas blends into
+  // the stage instead of reading as a floating panel -- dark already matched;
+  // light was a few shades too light, leaving a visible box around the cage.
+  bg:       () => isDark.value ? 0x0a0e14 : 0xeaeaec,
+  ambient:  () => isDark.value ? 0x2a3a4a : 0x909099,
+  dirLight: () => isDark.value ? 0xbfd0e0 : 0xffffff,
+  // Gimbal-ring color. Cyan glows on the near-black dark background, but that
+  // same cyan all but vanished on the light gray stage -- so the light theme
+  // gets a deep teal that actually reads against #eaeaec.
+  ring:     () => isDark.value ? 0x35c9e0 : 0x0e7c8b,
 }
 
 async function buildScene() {
@@ -71,8 +71,8 @@ async function buildScene() {
   camera = new THREE.PerspectiveCamera(38, 1, 0.1, 200)
   camera.position.set(
     DEFAULT_DIST * 0.56,
-    DEFAULT_DIST * 0.35,
-    DEFAULT_DIST * 0.56
+    DEFAULT_DIST * 0.34,
+    DEFAULT_DIST * 0.56,
   )
   camera.lookAt(0, 0, 0)
 
@@ -94,9 +94,9 @@ async function buildScene() {
   geometry.rotateX(-Math.PI / 2)
   geometry.computeVertexNormals()
   const material = new THREE.MeshStandardMaterial({
-    color: 0xb8c4d4,
-    metalness: 0.25,
-    roughness: 0.55,
+    color: 0xc2d0de,
+    metalness: 0.3,
+    roughness: 0.5,
     flatShading: true,
   })
   uuvMesh = new THREE.Mesh(geometry, material)
@@ -109,17 +109,43 @@ async function buildScene() {
   const scale = 5.0 / maxDim
   uuvMesh.scale.setScalar(scale)
   uuvMesh.position.sub(center.multiplyScalar(scale))
-
   scene.add(uuvMesh)
 
-  // Reference grid (horizontal)
-  gridHelper = new THREE.GridHelper(10, 20, C.grid(), C.grid())
-  gridHelper.position.y = -2.2
-  scene.add(gridHelper)
+  // Gyroscope cage sized to the scaled model's bounding sphere
+  const bs = new THREE.Box3().setFromObject(uuvMesh).getBoundingSphere(new THREE.Sphere())
+  buildGyro(bs.radius * 1.12)
+}
 
-  // Small axes indicator
-  const axes = new THREE.AxesHelper(1.4)
-  scene.add(axes)
+// Three orthogonal gimbal rings (nested radii) + a faint wireframe shell.
+function buildGyro(radius: number) {
+  gyroRadius = radius   // shell + outermost ring both sit at this radius
+  gyroGroup = new THREE.Group()
+
+  // Faint wireframe shell
+  const shell = new THREE.Mesh(
+    new THREE.SphereGeometry(radius, 30, 18),
+    new THREE.MeshBasicMaterial({ color: C.ring(), wireframe: true, transparent: true, opacity: 0.05 }),
+  )
+  gyroGroup.add(shell)
+
+  // Gimbal rings: each a great circle about a different axis
+  const radii = [radius, radius * 0.93, radius * 0.86]
+  const rots: [number, number, number][] = [
+    [0, 0, 0],            // around Z
+    [Math.PI / 2, 0, 0],  // around Y
+    [0, Math.PI / 2, 0],  // around X
+  ]
+  const opac = [0.6, 0.42, 0.52]
+  radii.forEach((rr, i) => {
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(rr, Math.max(0.012, rr * 0.006), 10, 160),
+      new THREE.MeshBasicMaterial({ color: C.ring(), transparent: true, opacity: opac[i] }),
+    )
+    ring.rotation.set(rots[i][0], rots[i][1], rots[i][2])
+    gyroGroup.add(ring)
+  })
+
+  scene.add(gyroGroup)
 }
 
 function buildControls() {
@@ -128,9 +154,11 @@ function buildControls() {
   controls.enableDamping   = true
   controls.dampingFactor   = 0.08
   controls.enablePan       = false
-  controls.enableZoom      = false   // handled by buttons
-  controls.minDistance     = MIN_DIST
-  controls.maxDistance     = MAX_DIST
+  controls.enableZoom      = false   // distance is driven by fitCameraDistance()
+  // Permissive clamp so OrbitControls.update() never overrides the fit distance
+  // (it re-derives the orbit radius from camera.position each frame).
+  controls.minDistance     = 1
+  controls.maxDistance     = 1000
   controls.rotateSpeed     = 0.55
   controls.update()
 }
@@ -146,15 +174,58 @@ function applyQuaternion() {
 function updateColors() {
   if (!scene) return
   scene.background = new THREE.Color(C.bg())
-  // GridHelper has no setColors() — recreate it
-  scene.remove(gridHelper)
-  gridHelper = new THREE.GridHelper(10, 20, C.grid(), C.grid())
-  gridHelper.position.y = -2.2
-  scene.add(gridHelper)
-  // Update lights
   ambLight.color.set(C.ambient())
   dirLight1.color.set(C.dirLight())
   dirLight2.color.set(C.dirLight())
+  // Recolor the gimbal cage (shell + rings) so the theme toggle swaps the
+  // light-theme teal and dark-theme cyan live, not just on first build.
+  if (gyroGroup) {
+    const c = C.ring()
+    gyroGroup.traverse((o) => {
+      const m = (o as THREE.Mesh).material as THREE.MeshBasicMaterial | undefined
+      if (m && 'color' in m) m.color.set(c)
+    })
+  }
+}
+
+// Frame the gyro's bounding sphere to (nearly) fill the canvas within BOTH the
+// vertical and horizontal FOV -- for a portrait canvas the horizontal FOV is the
+// tighter one, so it binds; for landscape, the vertical does. Then push the cage
+// DOWN into whatever vertical slack remains so it sits low, hugging the init bar,
+// instead of floating at the canvas mid-height. On a portrait canvas the sphere
+// is width-fit, leaving tall vertical room that this pan consumes; on a near-
+// square / landscape canvas it already fills the height, so there's no slack and
+// no pan. The pan moves the camera AND the orbit target together, so it's a pure
+// vertical lens-shift -- the fit is undisturbed and dragging still orbits.
+function frameGyro() {
+  if (!gyroRadius || !camera || !controls) return
+  const vFov = (camera.fov * Math.PI) / 180
+  const hFov = 2 * Math.atan(Math.tan(vFov / 2) * camera.aspect)
+  const dist = (gyroRadius / Math.sin(Math.min(vFov, hFov) / 2)) * FIT_MARGIN
+
+  // Preserve the current orbit direction (so a user drag survives a resize);
+  // fall back to the seeded oblique view on the very first frame.
+  const dir = camera.position.clone().sub(controls.target)
+  if (dir.lengthSq() < 1e-6) dir.set(0.56, 0.34, 0.56)
+  dir.normalize()
+  camera.position.copy(dir).multiplyScalar(dist)
+  controls.target.set(0, 0, 0)
+  camera.lookAt(0, 0, 0)
+  camera.updateMatrixWorld()
+
+  // Vertical room above+below the sphere at its own plane; spend it pushing the
+  // cage down to BOTTOM_MARGIN_FRAC of a radius off the lower edge.
+  const halfH = dist * Math.tan(vFov / 2)
+  const panUp = halfH - gyroRadius * (1 + BOTTOM_MARGIN_FRAC)
+  if (panUp > 0) {
+    // Camera's screen-up axis (2nd column of its world matrix). Panning the view
+    // UP slides the scene content DOWN, dropping the cage toward the lower edge.
+    const up = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1).normalize()
+    camera.position.addScaledVector(up, panUp)
+    controls.target.addScaledVector(up, panUp)
+    camera.lookAt(controls.target)
+  }
+  camera.updateProjectionMatrix()
 }
 
 function resize() {
@@ -166,18 +237,8 @@ function resize() {
   renderer.setSize(w, h, false)
   camera.aspect = w / h
   camera.updateProjectionMatrix()
+  frameGyro()
 }
-
-function zoomBy(delta: number) {
-  const dir  = camera.position.clone().sub(controls.target).normalize()
-  const dist = camera.position.distanceTo(controls.target)
-  const next = Math.min(MAX_DIST, Math.max(MIN_DIST, dist + delta))
-  camera.position.copy(controls.target).addScaledVector(dir, next)
-  controls.update()
-}
-
-function zoomIn()  { zoomBy(-ZOOM_STEP) }
-function zoomOut() { zoomBy(+ZOOM_STEP) }
 
 function animate() {
   animId = requestAnimationFrame(animate)
@@ -188,7 +249,7 @@ function animate() {
 
 onMounted(async () => {
   if (!canvasRef.value) return
-  renderer = new THREE.WebGLRenderer({ canvas: canvasRef.value, antialias: true })
+  renderer = new THREE.WebGLRenderer({ canvas: canvasRef.value, antialias: true, alpha: true })
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
   await buildScene()
   buildControls()
@@ -212,27 +273,6 @@ watch(() => [props.qw, props.qx, props.qy, props.qz], applyQuaternion)
 <template>
   <div class="uuv-wrap">
     <canvas ref="canvasRef" class="uuv-canvas" />
-
-    <!-- Zoom controls -->
-    <div class="zoom-btns">
-      <button class="zoom-btn" @click="zoomIn"  title="Zoom in">
-        <v-icon size="13">mdi-plus</v-icon>
-      </button>
-      <button class="zoom-btn" @click="zoomOut" title="Zoom out">
-        <v-icon size="13">mdi-minus</v-icon>
-      </button>
-    </div>
-
-    <!-- HUD overlay -->
-    <div class="hud">
-      <div class="hud-row"><span class="hk">Roll </span><span class="hv">{{ rollDeg }}°</span></div>
-      <div class="hud-row"><span class="hk">Pitch</span><span class="hv">{{ pitchDeg }}°</span></div>
-      <div class="hud-row"><span class="hk">Yaw  </span><span class="hv">{{ yawDeg }}°</span></div>
-      <div class="hud-row"><span class="hk">Depth</span><span class="hv">{{ depth.toFixed(1) }} m</span></div>
-    </div>
-
-    <!-- Drag hint (fades after first interaction) -->
-    <div class="drag-hint">drag to orbit</div>
   </div>
 </template>
 
@@ -253,76 +293,4 @@ watch(() => [props.qw, props.qx, props.qy, props.qz], applyQuaternion)
   cursor: grab;
 }
 .uuv-canvas:active { cursor: grabbing; }
-
-/* ── Zoom buttons ──────────────────────────────────────────────────────── */
-.zoom-btns {
-  position: absolute;
-  bottom: 14px;
-  right: 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.zoom-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: 1px solid var(--border-btn);
-  border-radius: var(--radius-xs);
-  cursor: pointer;
-  background: var(--bg-btn);
-  color: var(--text-muted);
-  opacity: 0.85;
-  transition: background var(--transition), opacity var(--transition), color var(--transition);
-  backdrop-filter: blur(4px);
-}
-.zoom-btn:hover {
-  opacity: 1;
-  background: var(--accent-hover-bg);
-  border-color: var(--accent-border);
-  color: var(--accent);
-}
-
-/* ── HUD ───────────────────────────────────────────────────────────────── */
-.hud {
-  position: absolute;
-  top: 12px;
-  left: 13px;
-  pointer-events: none;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-.hud-row { display: flex; align-items: baseline; gap: 5px; }
-.hk {
-  font-family: var(--font-mono);
-  font-size: 9px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text-hint);
-  width: 32px;
-  flex-shrink: 0;
-}
-.hv {
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  color: var(--text-muted);
-}
-
-/* ── Drag hint ─────────────────────────────────────────────────────────── */
-.drag-hint {
-  position: absolute;
-  bottom: 14px;
-  left: 50%;
-  transform: translateX(-50%);
-  font-family: var(--font-ui);
-  font-size: 9.5px;
-  color: var(--text-hint);
-  letter-spacing: 0.06em;
-  pointer-events: none;
-  opacity: 0.7;
-}
 </style>

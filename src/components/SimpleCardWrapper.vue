@@ -33,8 +33,8 @@ const title = computed(() => props.title)
   text-transform: uppercase;
   letter-spacing: 0.1em;
   color: var(--text-muted);
-  margin-bottom: 12px;
-  padding-bottom: 8px;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
   border-bottom: 1px solid var(--border-divider);
 }
 </style>

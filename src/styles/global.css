@@ -30,6 +30,16 @@
   --accent-hover-bg:  #e6eef8;
   --accent-active-bg: #d4e2f4;
   --accent-border:    #8aaddc;
+  --accent-glow:      rgba(74,127,203,0.16);
+  --gauge-track:      #d8dde4;
+
+  /* Decorative panel accents — UI chrome only, no semantic meaning. Each
+     dashboard panel gets its own hue so the screen reads as distinct
+     instruments rather than one gray field. */
+  --panel-depth-accent:  #2f6fc4;  --panel-depth-border:  #9cb9e6;
+  --panel-subsys-accent: #7a55c8;  --panel-subsys-border: #c2afe8;
+  --panel-cmd-accent:    #b8791f;  --panel-cmd-border:    #d99f3a;
+  --panel-dive-accent:   var(--accent);  --panel-dive-border:  var(--accent);
 
   --metric-value:     #0e0e18;
   --metric-value-lg:  40px;
@@ -59,64 +69,74 @@
 }
 
 /* ── CSS variables — dark ────────────────────────────────────────────────── */
+/* Mission-control retune: near-black cool background, cyan/teal accent, borders
+   and muted text de-purpled toward slate. Matches the SpaceX-console reference. */
 html.dark {
-  --bg:               #0d0d12;
-  --bg-panel:         #16161e;
-  --bg-sidebar:       #111118;
-  --bg-appbar:        #0f0f16;
-  --bg-input:         #1c1c26;
-  --bg-table-head:    #1a1a24;
-  --bg-btn:           #1e1e2a;
-  --bg-code:          #1a1c2c;
+  --bg:               #0a0e14;
+  --bg-panel:         #0f141c;
+  --bg-sidebar:       #0b0f16;
+  --bg-appbar:        #0a0e15;
+  --bg-input:         #141b24;
+  --bg-table-head:    #121925;
+  --bg-btn:           #151c26;
+  --bg-code:          #121a26;
 
-  --border:           #26263a;
-  --border-sidebar:   #1e1e2e;
-  --border-input:     #2e2e42;
-  --border-btn:       #2c2c40;
-  --border-divider:   #1e1e2e;
+  --border:           #1b2633;
+  --border-sidebar:   #16202b;
+  --border-input:     #243341;
+  --border-btn:       #223141;
+  --border-divider:   #161f29;
 
-  --text:             #dcdce8;
-  --text-muted:       #7070a0;
-  --text-hint:        #40404e;
-  --text-btn:         #b0b0c8;
-  --text-mono:        #8888b0;
-  --text-label:       #7070a0;
+  --text:             #dde6ee;
+  --text-muted:       #7d93a8;
+  --text-hint:        #3c4a59;
+  --text-btn:         #aebccb;
+  --text-mono:        #85a0b5;
+  --text-label:       #7d93a8;
 
-  --accent:           #6090d8;
-  --accent-light:     rgba(96,144,216,0.08);
-  --accent-hover-bg:  #1a2840;
-  --accent-active-bg: #162036;
-  --accent-border:    #385888;
+  --accent:           #35c9e0;
+  --accent-light:     rgba(53,201,224,0.08);
+  --accent-hover-bg:  #0e2630;
+  --accent-active-bg: #0c1f28;
+  --accent-border:    #1f6e7e;
+  --accent-glow:      rgba(53,201,224,0.20);
+  --gauge-track:      #1a2531;
 
-  --metric-value:     #e8e8f0;
+  /* Decorative panel accents (dark) — muted borders + faint glows on near-black. */
+  --panel-depth-accent:  #6fa3e6;  --panel-depth-border:  #2b4a73;
+  --panel-subsys-accent: #b0a2ee;  --panel-subsys-border: #3a3070;
+  --panel-cmd-accent:    #d8a23f;  --panel-cmd-border:    #6e520f;
+  --panel-dive-accent:   var(--accent);  --panel-dive-border:  var(--accent);
 
-  --status-q-bg:       #241c08; --status-q-text:  #d89840; --status-q-border:  #483408;
-  --status-ok-bg:      #081408; --status-ok-text: #60a860; --status-ok-border: #163c16;
-  --status-err-bg:     #200808; --status-err-text:#c06060; --status-err-border:#481818;
+  --metric-value:     #e8f2f7;
 
-  --alive-yes: #60a860;
-  --alive-no:  #c06060;
+  --status-q-bg:       #241c08; --status-q-text:  #d8a23f; --status-q-border:  #48360a;
+  --status-ok-bg:      #08160e; --status-ok-text: #3fcf86; --status-ok-border: #143c28;
+  --status-err-bg:     #1f0a0a; --status-err-text:#e0606a; --status-err-border:#48181c;
 
-  --chart-grid:    #21212e;
-  --chart-text:    #606080;
-  --chart-line:    #6090d8;
-  --chart-sim:     #d09040;
+  --alive-yes: #3fcf86;
+  --alive-no:  #e0606a;
+
+  --chart-grid:    #16202b;
+  --chart-text:    #5a6b7a;
+  --chart-line:    #35c9e0;
+  --chart-sim:     #d8a23f;
 }
 
 /* ── Vuetify theme variable overrides for dark mode ─────────────────────── */
 html.dark {
-  --v-theme-background:    13,13,18;
-  --v-theme-surface:       22,22,30;
-  --v-theme-on-background: 220,220,232;
-  --v-theme-on-surface:    220,220,232;
+  --v-theme-background:    10,14,20;
+  --v-theme-surface:       15,20,28;
+  --v-theme-on-background: 221,230,238;
+  --v-theme-on-surface:    221,230,238;
 }
 html.dark .v-application {
-  background-color: #0d0d12 !important;
-  color: #dcdce8 !important;
+  background-color: #0a0e14 !important;
+  color: #dde6ee !important;
 }
 html.dark .v-main,
 html.dark .v-main__wrap {
-  background: #0d0d12 !important;
+  background: #0a0e14 !important;
 }
 
 /* ── Base reset ──────────────────────────────────────────────────────────── */
