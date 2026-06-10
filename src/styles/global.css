@@ -69,30 +69,34 @@
 }
 
 /* ── CSS variables — dark ────────────────────────────────────────────────── */
-/* Mission-control retune: near-black cool background, cyan/teal accent, borders
-   and muted text de-purpled toward slate. Matches the SpaceX-console reference. */
+/* SpaceX-console retune: near-black NEUTRAL charcoal, not navy. The old palette
+   carried a blue cast in every surface (the blue channel ran ~10 levels hot);
+   that bias is pulled out here so the background reads as black and the
+   cyan/gold/status accents — all kept untouched — pop harder against the neutral
+   field. A dim radial lift (--bg-glow) is layered onto .v-main, centred behind
+   the 3D model, so the screen has depth instead of one flat slab. */
 html.dark {
-  --bg:               #0a0e14;
-  --bg-panel:         #0f141c;
-  --bg-sidebar:       #0b0f16;
-  --bg-appbar:        #0a0e15;
-  --bg-input:         #141b24;
-  --bg-table-head:    #121925;
-  --bg-btn:           #151c26;
-  --bg-code:          #121a26;
+  --bg:               #0a0b0d;
+  --bg-panel:         #101216;
+  --bg-sidebar:       #0c0d10;
+  --bg-appbar:        #0a0b0e;
+  --bg-input:         #16181d;
+  --bg-table-head:    #131519;
+  --bg-btn:           #16181d;
+  --bg-code:          #131519;
 
-  --border:           #1b2633;
-  --border-sidebar:   #16202b;
-  --border-input:     #243341;
-  --border-btn:       #223141;
-  --border-divider:   #161f29;
+  --border:           #242832;
+  --border-sidebar:   #1c1f27;
+  --border-input:     #2e323c;
+  --border-btn:       #2b2f39;
+  --border-divider:   #191b21;
 
-  --text:             #dde6ee;
-  --text-muted:       #7d93a8;
-  --text-hint:        #3c4a59;
-  --text-btn:         #aebccb;
-  --text-mono:        #85a0b5;
-  --text-label:       #7d93a8;
+  --text:             #e3e7ec;
+  --text-muted:       #8b909b;
+  --text-hint:        #474c56;
+  --text-btn:         #b2b8c1;
+  --text-mono:        #969ca7;
+  --text-label:       #868c97;
 
   --accent:           #35c9e0;
   --accent-light:     rgba(53,201,224,0.08);
@@ -100,15 +104,16 @@ html.dark {
   --accent-active-bg: #0c1f28;
   --accent-border:    #1f6e7e;
   --accent-glow:      rgba(53,201,224,0.20);
-  --gauge-track:      #1a2531;
+  --gauge-track:      #21242c;
 
-  /* Decorative panel accents (dark) — muted borders + faint glows on near-black. */
+  /* Decorative panel accents (dark) — kept; only the muted borders de-tinted a
+     touch toward neutral so they don't reintroduce a cast. */
   --panel-depth-accent:  #6fa3e6;  --panel-depth-border:  #2b4a73;
   --panel-subsys-accent: #b0a2ee;  --panel-subsys-border: #3a3070;
   --panel-cmd-accent:    #d8a23f;  --panel-cmd-border:    #6e520f;
   --panel-dive-accent:   var(--accent);  --panel-dive-border:  var(--accent);
 
-  --metric-value:     #e8f2f7;
+  --metric-value:     #eef3f7;
 
   --status-q-bg:       #241c08; --status-q-text:  #d8a23f; --status-q-border:  #48360a;
   --status-ok-bg:      #08160e; --status-ok-text: #3fcf86; --status-ok-border: #143c28;
@@ -117,26 +122,41 @@ html.dark {
   --alive-yes: #3fcf86;
   --alive-no:  #e0606a;
 
-  --chart-grid:    #16202b;
-  --chart-text:    #5a6b7a;
+  --chart-grid:    #1c1f27;
+  --chart-text:    #5e6470;
   --chart-line:    #35c9e0;
   --chart-sim:     #d8a23f;
+
+  /* Dim radial lift behind the 3D model — SpaceX-console depth. Cool-slate so it
+     reads as a faint glow, not a grey smudge; kept very low-alpha so the corners
+     stay near-black. Layered over --bg on .v-main (see below); the gyro canvas is
+     transparent, so the glow appears to emanate from behind the cage. */
+  --bg-glow: radial-gradient(ellipse 74% 52% at 50% 57%,
+               rgba(48,74,100,0.28) 0%,
+               rgba(26,36,50,0.13) 40%,
+               rgba(10,11,13,0) 74%);
 }
 
 /* ── Vuetify theme variable overrides for dark mode ─────────────────────── */
 html.dark {
-  --v-theme-background:    10,14,20;
-  --v-theme-surface:       15,20,28;
-  --v-theme-on-background: 221,230,238;
-  --v-theme-on-surface:    221,230,238;
+  --v-theme-background:    10,11,13;
+  --v-theme-surface:       16,18,22;
+  --v-theme-on-background: 227,231,236;
+  --v-theme-on-surface:    227,231,236;
 }
 html.dark .v-application {
-  background-color: #0a0e14 !important;
-  color: #dde6ee !important;
+  background-color: var(--bg) !important;
+  color: var(--text) !important;
 }
-html.dark .v-main,
+/* The dim center glow lives on .v-main (the content area below the app bar), not
+   .v-application, so it sits BEHIND the dashboard's transparent gaps and the
+   transparent gyro canvas and is centred on the model. __wrap stays transparent
+   so it doesn't repaint over the glow. */
+html.dark .v-main {
+  background: var(--bg-glow), var(--bg) !important;
+}
 html.dark .v-main__wrap {
-  background: #0a0e14 !important;
+  background: transparent !important;
 }
 
 /* ── Base reset ──────────────────────────────────────────────────────────── */

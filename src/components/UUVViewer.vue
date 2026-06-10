@@ -51,11 +51,12 @@ const BOTTOM_MARGIN_FRAC = 0.16
 
 // ── Color helpers ────────────────────────────────────────────────────────
 const C = {
-  // Match the page --bg in both themes so the (now narrower) canvas blends into
-  // the stage instead of reading as a floating panel -- dark already matched;
-  // light was a few shades too light, leaving a visible box around the cage.
-  bg:       () => isDark.value ? 0x0a0e14 : 0xeaeaec,
-  ambient:  () => isDark.value ? 0x2a3a4a : 0x909099,
+  // No scene background: the renderer is alpha:true and the scene clears
+  // transparent, so the canvas shows the page straight through. That lets the
+  // dark theme's dim center glow (--bg-glow on .v-main) read as emanating from
+  // BEHIND the cage, and keeps the canvas blended into the stage in both themes
+  // without having to track --bg by hand.
+  ambient:  () => isDark.value ? 0x303640 : 0x909099,
   dirLight: () => isDark.value ? 0xbfd0e0 : 0xffffff,
   // Gimbal-ring color. Cyan glows on the near-black dark background, but that
   // same cyan all but vanished on the light gray stage -- so the light theme
@@ -65,7 +66,8 @@ const C = {
 
 async function buildScene() {
   scene = new THREE.Scene()
-  scene.background = new THREE.Color(C.bg())
+  // Transparent — the page (and its center glow) shows through. See C above.
+  scene.background = null
 
   // Camera
   camera = new THREE.PerspectiveCamera(38, 1, 0.1, 200)
@@ -173,7 +175,6 @@ function applyQuaternion() {
 
 function updateColors() {
   if (!scene) return
-  scene.background = new THREE.Color(C.bg())
   ambLight.color.set(C.ambient())
   dirLight1.color.set(C.dirLight())
   dirLight2.color.set(C.dirLight())
