@@ -298,11 +298,12 @@ function moveRoll() {
   gap: 0;
 }
 
-/* Small horizontal bar between consecutive debug blocks. */
+/* Small horizontal bar between consecutive debug blocks -- the panel's accent
+   (warm gold) now lands here, since the card outline is gone. */
 .qc-section + .qc-section {
-  margin-top: 7px;
-  padding-top: 7px;
-  border-top: 1px solid var(--border);
+  margin-top: 11px;
+  padding-top: 11px;
+  border-top: 1px solid var(--panel-cmd-border);
 }
 
 .qc-hint {
@@ -311,7 +312,7 @@ function moveRoll() {
   margin: 0 0 6px;
   padding: 5px 8px;
   font-family: var(--font-ui);
-  font-size: 10.5px;
+  font-size: 12px;
   color: var(--text-hint);
   background: var(--bg-btn);
   border: 1px solid var(--border-btn);
@@ -324,7 +325,7 @@ function moveRoll() {
   justify-content: space-between;
   gap: 8px;
   font-family: var(--font-ui);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.1em;
@@ -359,7 +360,7 @@ function moveRoll() {
   justify-content: center;
   padding: 6px 6px;
   font-family: var(--font-ui);
-  font-size: 11px;
+  font-size: 12.5px;
   font-weight: 500;
   border: 1px solid var(--border-btn);
   border-radius: var(--radius-xs);
@@ -404,7 +405,7 @@ function moveRoll() {
   display: flex;
   flex-direction: column;
   font-family: var(--font-ui);
-  font-size: 9px;
+  font-size: 10.5px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -417,7 +418,7 @@ function moveRoll() {
   min-width: 0;
   padding: 4px 6px;
   font-family: var(--font-ui);
-  font-size: 11px;
+  font-size: 12.5px;
   font-weight: 500;
   border: 1px solid var(--border-btn);
   border-radius: var(--radius-xs);
@@ -445,7 +446,7 @@ function moveRoll() {
   margin: 4px 0 0;
   padding: 5px 8px;
   font-family: var(--font-ui);
-  font-size: 10.5px;
+  font-size: 12px;
   line-height: 1.4;
   color: var(--status-q-text, #b8860b);
   background: var(--status-q-bg, rgba(255, 196, 0, 0.08));

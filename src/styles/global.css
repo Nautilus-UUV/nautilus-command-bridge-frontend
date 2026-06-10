@@ -150,6 +150,21 @@ body,
   transition: background var(--transition), color var(--transition);
 }
 
+/* ── Number inputs: no spinner buttons ───────────────────────────────────── */
+/* Operators type setpoints by hand, so the native up/down increment steppers
+   on every <input type="number"> value box are stripped (WebKit/Blink + Firefox).
+   `step`/`min` are kept for validation; only the visible buttons go. */
+input[type='number']::-webkit-inner-spin-button,
+input[type='number']::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  appearance: none;
+  margin: 0;
+}
+input[type='number'] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
 /* ── v-main ──────────────────────────────────────────────────────────────── */
 .v-main {
   background: var(--bg) !important;

@@ -245,16 +245,34 @@ const gauges = computed(() => {
   color: var(--text-hint);
 }
 
-/* ── Panel accent stripes ────────────────────────────────────────────────── */
-/* Purely cosmetic: a colored top edge + matching heading tint on the two big
-   side panels, so the left command panel and the right dive profile each read
-   as their own instrument. Reaches into SimpleCardWrapper's .card-wrap via
-   :deep -- warm gold on the left, the primary accent on the right. */
-.dbg-wrap :deep(.card-wrap)    { border-top: 3px solid var(--panel-cmd-border); }
-.dbg-wrap :deep(.card-heading) { color: var(--panel-cmd-accent); }
+/* ── Side panels: flat, blended into the page ───────────────────────────── */
+/* The two big side instruments drop their card chrome and sit directly on the
+   dashboard background; their identity comes from an accent heading underline
+   (warm gold left, primary accent right) rather than a box outline. Reaches
+   into SimpleCardWrapper's .card-wrap via :deep -- the wrapper itself stays a
+   normal card for every other panel. The wrapper's 14px/16px padding is kept
+   so content stays flush with the Emergency / Reset buttons (left) and the
+   column edge (right). */
+.dbg-wrap  :deep(.card-wrap),
+.col-right :deep(.card-wrap) {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+}
 
-.col-right :deep(.card-wrap)    { border-top: 3px solid var(--panel-dive-border); }
-.col-right :deep(.card-heading) { color: var(--panel-dive-accent); }
+.dbg-wrap :deep(.card-heading) {
+  color: var(--panel-cmd-accent);
+  font-size: 12px;                                  /* up from the wrapper's 10px */
+  border-bottom: 2px solid var(--panel-cmd-border); /* accent underline replaces the box */
+  margin-bottom: 12px;                              /* extra breathing room below the underline */
+}
+
+.col-right :deep(.card-heading) {
+  color: var(--panel-dive-accent);
+  font-size: 12px;
+  border-bottom: 2px solid var(--panel-dive-border);
+  margin-bottom: 16px;  /* a touch more than Debug -- the select's floating label sits high */
+}
 
 /* ── Stacked fallback for narrow viewports ──────────────────────────────── */
 /* The three-column dashboard needs ~1362px to breathe: the two fixed 312px side

@@ -229,7 +229,7 @@ function onStop() {
 .unit-toggle {
   display: inline-flex; align-items: center;
   padding: 5px 10px;
-  font-family: var(--font-mono); font-size: 11px; font-weight: 500;
+  font-family: var(--font-mono); font-size: 12px; font-weight: 500;
   border: 1px solid var(--border-btn);
   border-radius: var(--radius-xs);
   background: var(--bg-btn); color: var(--text-muted);
@@ -241,7 +241,7 @@ function onStop() {
 
 .hint {
   font-family: var(--font-ui);
-  font-size: 11.5px;
+  font-size: 13px;
   color: var(--text-muted);
   line-height: 1.5;
   margin: 0;
@@ -262,12 +262,12 @@ function onStop() {
 }
 .field-label {
   font-family: var(--font-ui);
-  font-size: 10.5px; font-weight: 500;
+  font-size: 12px; font-weight: 500;
   text-transform: uppercase; letter-spacing: 0.06em;
   color: var(--text-muted);
 }
 .field-grid input {
-  font-family: var(--font-mono); font-size: 13px;
+  font-family: var(--font-mono); font-size: 14px;
   padding: 7px 10px;
   background: var(--bg-input, var(--bg-btn));
   color: var(--text);
@@ -282,9 +282,9 @@ function onStop() {
 .surface-note {
   display: flex; align-items: center; gap: 10px;
   padding: 16px;
-  font-family: var(--font-ui); font-size: 12px;
+  font-family: var(--font-ui); font-size: 13px;
   color: var(--text-muted);
-  border: 1px dashed var(--border);
+  border: 1px dashed var(--panel-dive-border);
   border-radius: var(--radius-xs);
 }
 
@@ -297,7 +297,7 @@ function onStop() {
 .nb-btn {
   display: inline-flex; align-items: center;
   padding: 6px 14px;
-  font-size: 12px; font-family: var(--font-ui); font-weight: 500;
+  font-size: 13.5px; font-family: var(--font-ui); font-weight: 500;
   border: 1px solid var(--border-btn);
   border-radius: var(--radius-xs);
   cursor: pointer; background: var(--bg-btn); color: var(--text-btn);
