@@ -16,8 +16,15 @@ const props = withDefaults(
     qx?: number
     qy?: number
     qz?: number
+    // Live translational acceleration in the IMU's FLU body frame (m/s^2):
+    // ax forward, ay left, az up. Drawn as a vector arrow from the cage centre,
+    // length scaled by magnitude and clamped to the sphere. Defaults to zero
+    // (no arrow) so the viewer still works without an IMU feed.
+    ax?: number
+    ay?: number
+    az?: number
   }>(),
-  { qw: 1, qx: 0, qy: 0, qz: 0 },
+  { qw: 1, qx: 0, qy: 0, qz: 0, ax: 0, ay: 0, az: 0 },
 )
 
 const { isDark } = useTheme()
@@ -37,6 +44,18 @@ let dirLight2: THREE.DirectionalLight
 let animId:    number
 let ro:        ResizeObserver
 
+// ── Acceleration arrow (translational accel vector) ───────────────────────
+let accelArrow:  THREE.Group            // root, rotated to point along the vector
+let accelShaft:  THREE.Mesh             // unit cylinder, scaled in Y to set length
+let accelHead:   THREE.Mesh             // cone tip, constant size
+let accelMat:    THREE.MeshStandardMaterial
+let arrowHeadLen = 0                     // world height of the cone at full size
+// Smoothed render state so the 10 Hz feed glides instead of stepping.
+const ARROW_UP = new THREE.Vector3(0, 1, 0)   // arrow's local axis before rotation
+const arrowDir = new THREE.Vector3(0, 1, 0)   // current (smoothed) target direction
+const arrowQuat = new THREE.Quaternion()      // current (smoothed) orientation
+let arrowLen = 0                              // current (smoothed) length
+
 // The camera distance is NOT fixed -- it's recomputed per canvas aspect in
 // frameGyro() so the whole gyro sphere stays framed even when the stage canvas
 // turns portrait on a narrow window (a fixed distance clipped the sphere
@@ -48,6 +67,16 @@ let ro:        ResizeObserver
 const DEFAULT_DIST       = 14
 const FIT_MARGIN         = 1.08
 const BOTTOM_MARGIN_FRAC = 0.16
+
+// Acceleration arrow tuning. ACCEL_REF_MPS2 is the magnitude that maps to a
+// (near) full-radius arrow: ~2 g, so gravity alone (1 g, at rest) draws a clean
+// half-radius vector pointing up and maneuvers push it out toward the shell.
+// ARROW_FILL keeps the tip just inside the sphere; ARROW_SMOOTH is the per-frame
+// lerp toward the latest sample.
+const ACCEL_REF_MPS2 = 2 * 9.806
+const ARROW_FILL     = 0.9
+const ARROW_SMOOTH   = 0.18
+const ARROW_MIN_MPS2 = 0.05   // below this the arrow hides (no meaningful direction)
 
 // ── Color helpers ────────────────────────────────────────────────────────
 const C = {
@@ -62,6 +91,9 @@ const C = {
   // same cyan all but vanished on the light gray stage -- so the light theme
   // gets a deep teal that actually reads against #eaeaec.
   ring:     () => isDark.value ? 0x35c9e0 : 0x0e7c8b,
+  // Acceleration arrow -- the purple of the TRANS ACC panel title, so the dials
+  // and the vector read as the same instrument.
+  accel:    () => isDark.value ? 0xb0a2ee : 0x7a55c8,
 }
 
 async function buildScene() {
@@ -116,6 +148,34 @@ async function buildScene() {
   // Gyroscope cage sized to the scaled model's bounding sphere
   const bs = new THREE.Box3().setFromObject(uuvMesh).getBoundingSphere(new THREE.Sphere())
   buildGyro(bs.radius * 1.12)
+  buildAccelArrow()
+}
+
+// A slim vector arrow rooted at the cage centre: a thin cylinder shaft capped by
+// a cone. Built once at unit proportions (shaft is a 1-unit cylinder we scale in
+// Y; cone is a fixed size), then each frame updateAccelArrow() rotates the whole
+// group to the vector direction and sets the shaft length.
+function buildAccelArrow() {
+  arrowHeadLen = gyroRadius * 0.14
+  const shaftR = gyroRadius * 0.014
+  const headR  = gyroRadius * 0.045
+  accelMat = new THREE.MeshStandardMaterial({
+    color: C.accel(),
+    metalness: 0.15,
+    roughness: 0.45,
+    transparent: true,
+    opacity: 0.96,
+  })
+
+  accelArrow = new THREE.Group()
+  // Cylinder is centred on its own origin (spans y=-0.5..0.5 at unit height); we
+  // scale + lift it in updateAccelArrow so its base stays at the cage centre.
+  accelShaft = new THREE.Mesh(new THREE.CylinderGeometry(shaftR, shaftR, 1, 16), accelMat)
+  accelHead = new THREE.Mesh(new THREE.ConeGeometry(headR, arrowHeadLen, 20), accelMat)
+  accelArrow.add(accelShaft)
+  accelArrow.add(accelHead)
+  accelArrow.visible = false
+  scene.add(accelArrow)
 }
 
 // Three orthogonal gimbal rings (nested radii) + a faint wireframe shell.
@@ -173,6 +233,43 @@ function applyQuaternion() {
   uuvMesh.setRotationFromQuaternion(q)
 }
 
+// Drive the acceleration arrow from the live FLU body vector. Maps the body
+// frame (x fwd, y left, z up) into the scene's axes (x fwd, y up, z = -left),
+// rides the model's attitude quaternion so it tracks the cage when wired live,
+// scales length by magnitude (clamped to the sphere), and lerps both direction
+// and length toward the latest sample so the 10 Hz stream glides.
+function updateAccelArrow() {
+  if (!accelArrow || !gyroRadius) return
+  const mag = Math.hypot(props.ax, props.ay, props.az)
+  const fullLen = gyroRadius * ARROW_FILL
+  const targetLen =
+    mag <= ARROW_MIN_MPS2 ? 0 : Math.min((mag / ACCEL_REF_MPS2) * fullLen, fullLen)
+
+  if (mag > ARROW_MIN_MPS2) {
+    // FLU body -> scene axes, then rotate by the model's current attitude.
+    arrowDir.set(props.ax, props.az, -props.ay).normalize()
+    const q = new THREE.Quaternion(props.qx, props.qy, props.qz, props.qw)
+    if (q.lengthSq() < 0.001) q.set(0, 0, 0, 1)
+    else q.normalize()
+    arrowDir.applyQuaternion(q)
+    arrowQuat.slerp(new THREE.Quaternion().setFromUnitVectors(ARROW_UP, arrowDir), ARROW_SMOOTH)
+  }
+
+  arrowLen += (targetLen - arrowLen) * ARROW_SMOOTH
+  accelArrow.visible = arrowLen > 0.02
+  if (!accelArrow.visible) return
+
+  accelArrow.quaternion.copy(arrowQuat)
+  // Keep the cone a constant size until the arrow gets shorter than the head,
+  // then let the head shrink with it so a tiny vector still looks like an arrow.
+  const headLen = Math.min(arrowHeadLen, arrowLen)
+  const shaftLen = Math.max(1e-4, arrowLen - headLen)
+  accelShaft.scale.y = shaftLen
+  accelShaft.position.y = shaftLen / 2
+  accelHead.scale.y = headLen / arrowHeadLen
+  accelHead.position.y = shaftLen + headLen / 2
+}
+
 function updateColors() {
   if (!scene) return
   ambLight.color.set(C.ambient())
@@ -187,6 +284,7 @@ function updateColors() {
       if (m && 'color' in m) m.color.set(c)
     })
   }
+  if (accelMat) accelMat.color.set(C.accel())
 }
 
 // Frame the gyro's bounding sphere to (nearly) fill the canvas within BOTH the
@@ -245,6 +343,7 @@ function animate() {
   animId = requestAnimationFrame(animate)
   controls.update()          // needed for damping
   applyQuaternion()
+  updateAccelArrow()
   renderer.render(scene, camera)
 }
 

@@ -20,7 +20,7 @@ import CommandProfilePanel from '@/components/CommandPanels/CommandProfilePanel.
 // dial (or any future metric) is one more object here + its accessor -- the
 // fluid flex-wrap container reflows on its own. Ranges are grounded in
 // robot_specs.py (BCU_MOTOR_MAX_RPM, ACU_PITCH_MAX_TRAVEL_M, ACU_ROLL_MAX_ANGLE).
-const { bcuRpm, acuPitch, acuRoll, bcuPressure } = storeToRefs(useTelemetryStore())
+const { bcuRpm, acuPitch, acuRoll, bcuPressure, imuLeft } = storeToRefs(useTelemetryStore())
 
 const latest = (s: { value: { value: number }[] }) => s.value[0]?.value ?? null
 
@@ -60,6 +60,35 @@ const gauges = computed(() => {
     },
   ]
 })
+
+// IMU gauge boxes. The /imu/left stream carries SI (rad/s, m/s^2); the dials
+// present operator-friendly units -- angular velocity in °/s, acceleration in
+// mg -- so the conversion is presentation-only here. Display ranges are picked
+// for readability (a glider's rates/accels are well inside the sensor's ±2000
+// °/s / ±6 g full scale), independent of the sensor scaling in robot_specs.py.
+const latestImu = computed(() => imuLeft.value[0]?.value ?? null)
+const RAD_TO_DEG = 180 / Math.PI
+const MPS2_TO_MG = 1000 / 9.80665
+
+const angVelGauges = computed(() => {
+  const w = latestImu.value?.angular_velocity
+  const dps = (v?: number) => (v == null ? null : v * RAD_TO_DEG)
+  return [
+    { key: 'roll', label: 'Roll', value: dps(w?.x), min: -180, max: 180, signed: true, unit: '°/s', decimals: 1 },
+    { key: 'pitch', label: 'Pitch', value: dps(w?.y), min: -180, max: 180, signed: true, unit: '°/s', decimals: 1 },
+    { key: 'yaw', label: 'Yaw', value: dps(w?.z), min: -180, max: 180, signed: true, unit: '°/s', decimals: 1 },
+  ]
+})
+
+const accelGauges = computed(() => {
+  const a = latestImu.value?.linear_acceleration
+  const mg = (v?: number) => (v == null ? null : v * MPS2_TO_MG)
+  return [
+    { key: 'ax', label: 'X', value: mg(a?.x), min: -2000, max: 2000, signed: true, unit: 'mg', decimals: 0 },
+    { key: 'ay', label: 'Y', value: mg(a?.y), min: -2000, max: 2000, signed: true, unit: 'mg', decimals: 0 },
+    { key: 'az', label: 'Z', value: mg(a?.z), min: -2000, max: 2000, signed: true, unit: 'mg', decimals: 0 },
+  ]
+})
 </script>
 
 <template>
@@ -88,12 +117,56 @@ const gauges = computed(() => {
         />
       </div>
 
+      <!-- IMU instrument boxes: angular velocity (gyro) and translational
+           acceleration, flanking the model area. Compact dials so three fit a
+           box; values converted to °/s and mg for display. -->
+      <div class="imu-boxes">
+        <div class="data-box">
+          <div class="data-box-title">Ang Vel</div>
+          <div class="box-gauges">
+            <CircularGauge
+              v-for="g in angVelGauges"
+              :key="g.key"
+              :value="g.value"
+              :min="g.min"
+              :max="g.max"
+              :label="g.label"
+              :unit="g.unit"
+              :signed="g.signed"
+              :decimals="g.decimals"
+              size="compact"
+            />
+          </div>
+        </div>
+        <div class="data-box">
+          <div class="data-box-title">Trans Acc</div>
+          <div class="box-gauges">
+            <CircularGauge
+              v-for="g in accelGauges"
+              :key="g.key"
+              :value="g.value"
+              :min="g.min"
+              :max="g.max"
+              :label="g.label"
+              :unit="g.unit"
+              :signed="g.signed"
+              :decimals="g.decimals"
+              size="compact"
+            />
+          </div>
+        </div>
+      </div>
+
       <div class="stage">
         <div class="flank flank-left">
           <DepthValveReadout />
         </div>
         <div class="model">
-          <UUVViewer />
+          <UUVViewer
+            :ax="latestImu?.linear_acceleration?.x ?? 0"
+            :ay="latestImu?.linear_acceleration?.y ?? 0"
+            :az="latestImu?.linear_acceleration?.z ?? 0"
+          />
         </div>
         <div class="flank flank-right">
           <SubsystemHealthPanel />
@@ -155,6 +228,42 @@ const gauges = computed(() => {
   gap: 14px;
   justify-content: center;
   flex: 0 0 auto;
+}
+
+/* ── IMU boxes (ang-vel left, accel right; flank the model area) ─────────── */
+.imu-boxes {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 14px;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  /* Inset from the column edges so the two groups sit a little further in,
+     toward the model, rather than hard against the outer margins. */
+  padding: 0 56px;
+}
+/* Transparent: no card chrome, just the title + dials sitting on the page. */
+.data-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: transparent;
+}
+.data-box-title {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  text-align: center;
+}
+/* Accent the two titles so they read like the Depth / Subsystems instruments:
+   warm gold for angular velocity, purple for acceleration. */
+.imu-boxes .data-box:nth-child(1) .data-box-title { color: var(--panel-cmd-accent); }
+.imu-boxes .data-box:nth-child(2) .data-box-title { color: var(--panel-subsys-accent); }
+.box-gauges {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
 }
 
 /* ── Stage: depth | model | liveness ────────────────────────────────────── */

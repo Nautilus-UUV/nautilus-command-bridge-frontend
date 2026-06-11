@@ -22,6 +22,9 @@ const props = withDefaults(
     // Accent override -- defaults to the theme accent so all dials match, but a
     // future temperature gauge could pass its own hue.
     color?: string
+    // 'compact' shrinks the dial (and value font) so three fit side-by-side in
+    // a box, e.g. the IMU ang-vel / accel panels. Default keeps the full size.
+    size?: 'normal' | 'compact'
   }>(),
   {
     unit: '',
@@ -29,6 +32,7 @@ const props = withDefaults(
     decimals: 0,
     trend: 'flat',
     color: 'var(--accent)',
+    size: 'normal',
   },
 )
 
@@ -85,7 +89,7 @@ const display = computed(() =>
 </script>
 
 <template>
-  <div class="gauge">
+  <div class="gauge" :class="{ compact: size === 'compact' }">
     <div class="gauge-dial">
       <svg viewBox="0 0 100 100" class="gauge-svg">
         <path :d="trackPath" class="gauge-track" fill="none" />
@@ -206,5 +210,23 @@ const display = computed(() =>
   letter-spacing: 0.1em;
   color: var(--text-muted);
   text-align: center;
+}
+
+/* ── Compact variant: three dials per box (IMU ang-vel / accel) ──────────── */
+.gauge.compact {
+  width: 100px;
+  gap: 3px;
+}
+.gauge.compact .gauge-dial {
+  max-width: 92px;
+}
+.gauge.compact .gauge-value {
+  font-size: 19px;
+}
+.gauge.compact .gauge-unit {
+  font-size: 9px;
+}
+.gauge.compact .gauge-label {
+  font-size: 9.5px;
 }
 </style>
