@@ -19,6 +19,13 @@ const depthM = computed(() =>
 )
 // ~100 Pa deadband (~0.01 m) so a settled depth doesn't flicker the arrow.
 const depthTrend = computed(() => trendOf(externalPressure.value, { back: 5, eps: 100 }))
+// Depth grows downward, so the travel arrow is the INVERSE of the pressure
+// trend: rising pressure (diving) points the triangle DOWN, surfacing points
+// UP. Both the glyph and the up/down colour follow this, so a diving readout
+// reads as a down triangle -- consistent with every other gauge's arrows.
+const depthArrow = computed(() =>
+  depthTrend.value === 'up' ? 'down' : depthTrend.value === 'down' ? 'up' : 'flat',
+)
 
 // Valve bitmap: bit0 = motor way (operator "Valve 2"), bit1 = free/bypass way
 // (operator "Valve 1") -- same convention as DebugCommandsPanel.
@@ -38,9 +45,9 @@ const freeOpen = computed(
       <div class="dv-depth-row">
         <span class="dv-val">{{ depthM === null ? '—' : depthM.toFixed(2) }}</span>
         <span class="dv-unit">m</span>
-        <span class="dv-trend" :class="depthTrend" aria-hidden="true">
-          <template v-if="depthTrend === 'up'">&#9650;</template>
-          <template v-else-if="depthTrend === 'down'">&#9660;</template>
+        <span class="dv-trend" :class="depthArrow" aria-hidden="true">
+          <template v-if="depthArrow === 'up'">&#9650;</template>
+          <template v-else-if="depthArrow === 'down'">&#9660;</template>
           <template v-else>&middot;</template>
         </span>
       </div>

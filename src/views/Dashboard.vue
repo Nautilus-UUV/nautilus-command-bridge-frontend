@@ -8,6 +8,8 @@ import CircularGauge from '@/components/CircularGauge.vue'
 import DepthValveReadout from '@/components/DepthValveReadout.vue'
 import UUVViewer from '@/components/UUVViewer.vue'
 import EmergencySurfaceButton from '@/components/CommandPanels/EmergencySurfaceButton.vue'
+import LifeguardToggle from '@/components/CommandPanels/LifeguardToggle.vue'
+import DiveInitPanel from '@/components/CommandPanels/DiveInitPanel.vue'
 import DebugCommandsPanel from '@/components/CommandPanels/DebugCommandsPanel.vue'
 import ResetButton from '@/components/CommandPanels/ResetButton.vue'
 import SubsystemHealthPanel from '@/components/CommandPanels/SubsystemHealthPanel.vue'
@@ -98,10 +100,12 @@ const gauges = computed(() => {
         </div>
       </div>
 
-      <!-- Reserved for initialization commands -- empty placeholder for now,
-           to be filled in a later pass. -->
+      <!-- Deploy-time controls: pre-dive initialization + the lifeguard
+           dead-man failsafe. -->
       <div class="init-bar">
-        <span class="init-cap">Initialization</span>
+        <LifeguardToggle />
+        <div class="init-sep" aria-hidden="true"></div>
+        <DiveInitPanel />
       </div>
     </div>
 
@@ -206,8 +210,8 @@ const gauges = computed(() => {
 }
 
 /* ── Init bar (bottom of centre column) ─────────────────────────────────── */
-/* Empty placeholder that later holds initialization commands. Styled as a
-   horizontal toolbar panel so the slot reads as intentional, not a gap. */
+/* Deploy-time toolbar; holds the lifeguard toggle. Styled as a horizontal
+   console panel so the slot reads as intentional, not a gap. */
 .init-bar {
   position: relative;
   flex: 0 0 auto;
@@ -215,7 +219,7 @@ const gauges = computed(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: 22px;
   padding: 0 16px;
   /* Sharp top-inward trapezoid (SpaceX-console bar). clip-path clips the CSS
      border away on the slanted edges, so the 1px outline is faked with two
@@ -234,17 +238,16 @@ const gauges = computed(() => {
   clip-path: polygon(48px 0, calc(100% - 48px) 0, 100% 100%, 0 100%);
   transition: background var(--transition);
 }
-.init-cap {
-  position: relative; /* above the ::before fill */
+/* Small vertical divider between the lifeguard toggle and the dive-init
+   controls -- the vertical analogue of the Debug panel's section bars. */
+.init-sep {
+  position: relative; /* above the init-bar's ::before fill */
   z-index: 1;
-  font-family: var(--font-ui);
-  font-size: 10.5px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  color: var(--text-hint);
+  flex: 0 0 auto;
+  width: 1px;
+  height: 40px;
+  background: var(--panel-depth-accent);
 }
-
 /* ── Side panels: flat, blended into the page ───────────────────────────── */
 /* The two big side instruments drop their card chrome and sit directly on the
    dashboard background; their identity comes from an accent heading underline

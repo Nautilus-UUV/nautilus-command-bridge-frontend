@@ -31,6 +31,11 @@ const CMD_COMMAND = 'nautilus/cmd/command'
 const CMD_PATH = 'nautilus/cmd/path'
 const CMD_DEBUG_RESET = 'nautilus/cmd/debug/reset'
 
+// Operator-presence heartbeat for the glider's lifeguard failsafe. Consumed
+// by the bridge itself (never forwarded to ROS): once the lifeguard is armed,
+// heartbeat silence past its window makes the glider blow ballast and surface.
+const CMD_HEARTBEAT = 'nautilus/cmd/heartbeat'
+
 // Default broker URL. Override via VITE_MQTT_URL (set in .env or .env.local)
 // when running against a non-localhost broker -- e.g. ws://<laptop-ip>:9001
 // from a separate machine on the tethered LAN.
@@ -87,6 +92,14 @@ export const useMqttBridgeStore = defineStore('mqttBridge', () => {
     console.error('mqtt error', err)
   })
 
+  // 1 Hz heartbeat, QoS 0 and never retained -- a retained beat would replay
+  // on bridge reconnect as one fake-fresh sign of life. Runs for the app's
+  // lifetime: any open console means "operator present", which is exactly
+  // the signal the lifeguard keys on.
+  setInterval(() => {
+    if (connected.value) client.publish(CMD_HEARTBEAT, '{}', { qos: 0 })
+  }, 1000)
+
   client.on('message', (topic, payload) => {
     if (topic === STATUS_TOPIC) {
       const text = payload.toString().trim()
@@ -109,10 +122,15 @@ export const useMqttBridgeStore = defineStore('mqttBridge', () => {
 
   // Publish a JSON message at QoS 1 (matches the ingress QoS used by the
   // bridge). Objects are stringified; strings pass through unchanged so
-  // callers can also send raw JSON if they want.
-  function publish(topic: string, payload: object | string): void {
+  // callers can also send raw JSON if they want. `retain` is for state-like
+  // commands (the lifeguard arm) that must survive a bridge reconnect.
+  function publish(
+    topic: string,
+    payload: object | string,
+    opts?: { retain?: boolean },
+  ): void {
     const body = typeof payload === 'string' ? payload : JSON.stringify(payload)
-    client.publish(topic, body, { qos: 1 }, (err) => {
+    client.publish(topic, body, { qos: 1, retain: opts?.retain ?? false }, (err) => {
       if (err) {
         console.error('mqtt publish failed', topic, err)
       }

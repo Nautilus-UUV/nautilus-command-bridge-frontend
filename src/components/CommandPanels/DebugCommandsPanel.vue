@@ -246,7 +246,7 @@ function moveRoll() {
         <input type="number" v-model.number="pitchMm" step="5" />
       </label>
       <button class="qc-btn qc-acu-btn" :disabled="!commandsEnabled" @click="movePitch">
-        Move pitch
+        Move Pitch
       </button>
     </div>
     <div class="qc-acu-row">
@@ -255,7 +255,7 @@ function moveRoll() {
         <input type="number" v-model.number="rollDeg" step="1" />
       </label>
       <button class="qc-btn qc-acu-btn" :disabled="!commandsEnabled" @click="moveRoll">
-        Move roll
+        Move Roll
       </button>
     </div>
   </div>
@@ -438,7 +438,7 @@ function moveRoll() {
   margin-bottom: 4px;
 }
 .qc-acu-input { flex: 1; }
-.qc-acu-btn { flex: 0 0 auto; }
+.qc-acu-btn { flex: 0 0 auto; min-width: 96px; }
 
 .qc-warn {
   display: flex;
