@@ -17,15 +17,13 @@ export interface PoseMsg {
   orientation: Quat
 }
 
-// sensor_msgs/Imu -- /imu/filtered/{left,right}
+// sensor_msgs/Imu -- /imu/filtered. The bridge trims the wire frame to just
+// these two vectors (see mqtt_bridge_node._encode_imu_compact): orientation
+// and the covariance arrays are unfilled passthrough, and the 3D attitude model
+// runs off /position/estimation, not the IMU.
 export interface ImuMsg {
-  header: RosHeader
-  orientation: Quat
-  orientation_covariance: number[]
   angular_velocity: Vec3
-  angular_velocity_covariance: number[]
   linear_acceleration: Vec3
-  linear_acceleration_covariance: number[]
 }
 
 // std_msgs scalars -- BCU/external pressure (Int32), BCU rpm (Int16),
