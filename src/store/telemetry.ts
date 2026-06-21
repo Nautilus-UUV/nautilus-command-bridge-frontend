@@ -49,6 +49,7 @@ export const useTelemetryStore = defineStore('telemetry', () => {
   const bcuPressure = ref<Sample<number>[]>([])
   const externalPressure = ref<Sample<number>[]>([])
   const bcuRpm = ref<Sample<number>[]>([])
+  const bcuFeedbackRpm = ref<Sample<number>[]>([])
   const bcuValves = ref<Sample<number>[]>([])
   const acuPitch = ref<Sample<number>[]>([])
   const acuRoll = ref<Sample<number>[]>([])
@@ -106,6 +107,7 @@ export const useTelemetryStore = defineStore('telemetry', () => {
   bindScalar('nautilus/telemetry/bcu/pressure', bcuPressure, CAP_CHARTED)
   bindScalar('nautilus/telemetry/external/pressure', externalPressure, CAP_CHARTED)
   bindScalar('nautilus/telemetry/bcu/rpm', bcuRpm, CAP_CHARTED)
+  bindScalar('nautilus/telemetry/bcu/feedback/rpm', bcuFeedbackRpm, CAP_CHARTED)
   bindScalar('nautilus/telemetry/bcu/valves', bcuValves, CAP_STATE)
   bindScalar('nautilus/telemetry/acu/pitch', acuPitch, CAP_CHARTED)
   bindScalar('nautilus/telemetry/acu/roll', acuRoll, CAP_CHARTED)
@@ -139,6 +141,7 @@ export const useTelemetryStore = defineStore('telemetry', () => {
     bcuPressure,
     externalPressure,
     bcuRpm,
+    bcuFeedbackRpm,
     bcuValves,
     acuPitch,
     acuRoll,

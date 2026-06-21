@@ -20,7 +20,7 @@ import CommandProfilePanel from '@/components/CommandPanels/CommandProfilePanel.
 // dial (or any future metric) is one more object here + its accessor -- the
 // fluid flex-wrap container reflows on its own. Ranges are grounded in
 // robot_specs.py (BCU_MOTOR_MAX_RPM, ACU_PITCH_MAX_TRAVEL_M, ACU_ROLL_MAX_ANGLE).
-const { bcuRpm, acuPitch, acuRoll, bcuPressure, imu, position } = storeToRefs(useTelemetryStore())
+const { bcuRpm, bcuFeedbackRpm, acuPitch, acuRoll, bcuPressure, imu, position } = storeToRefs(useTelemetryStore())
 
 const latest = (s: { value: { value: number }[] }) => s.value[0]?.value ?? null
 
@@ -45,10 +45,17 @@ const gauges = computed(() => {
   return [
     {
       key: 'rpm',
-      label: 'Pump RPM',
+      label: 'Commanded RPM',
       value: latest(bcuRpm),
       min: -4000, max: 4000, signed: true, unit: 'rpm', decimals: 0,
       trend: trendOf(bcuRpm.value, { back: 5, eps: 20 }),
+    },
+    {
+      key: 'feedback-rpm',
+      label: 'Feedback RPM',
+      value: latest(bcuFeedbackRpm),
+      min: -4000, max: 4000, signed: true, unit: 'rpm', decimals: 0,
+      trend: trendOf(bcuFeedbackRpm.value, { back: 5, eps: 20 }),
     },
     {
       key: 'tank',
