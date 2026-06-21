@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useTelemetryStore } from '@/store/telemetry'
 import { trendOf } from '@/composables/useTrend'
@@ -20,9 +20,22 @@ import CommandProfilePanel from '@/components/CommandPanels/CommandProfilePanel.
 // dial (or any future metric) is one more object here + its accessor -- the
 // fluid flex-wrap container reflows on its own. Ranges are grounded in
 // robot_specs.py (BCU_MOTOR_MAX_RPM, ACU_PITCH_MAX_TRAVEL_M, ACU_ROLL_MAX_ANGLE).
-const { bcuRpm, acuPitch, acuRoll, bcuPressure, imuLeft } = storeToRefs(useTelemetryStore())
+const { bcuRpm, acuPitch, acuRoll, bcuPressure, imu, position } = storeToRefs(useTelemetryStore())
 
 const latest = (s: { value: { value: number }[] }) => s.value[0]?.value ?? null
+
+// 3D model view mode: 'freelook' orbits the camera freely (default), 'locked'
+// tilts the model to the estimator's inferred roll/pitch and lets drag spin
+// only the yaw view (which the glider can't observe).
+const modelView = ref<'freelook' | 'locked'>('freelook')
+function toggleModelView() {
+  modelView.value = modelView.value === 'locked' ? 'freelook' : 'locked'
+}
+// Inferred attitude off /position/estimation (the estimator pins yaw to 0).
+// Identity until the first pose arrives, so freelook starts level.
+const poseQuat = computed(
+  () => position.value[0]?.value?.orientation ?? { x: 0, y: 0, z: 0, w: 1 },
+)
 
 const gauges = computed(() => {
   const rollRaw = latest(acuRoll)
@@ -61,12 +74,12 @@ const gauges = computed(() => {
   ]
 })
 
-// IMU gauge boxes. The /imu/left stream carries SI (rad/s, m/s^2); the dials
+// IMU gauge boxes. The /imu stream carries SI (rad/s, m/s^2); the dials
 // present operator-friendly units -- angular velocity in °/s, acceleration in
 // mg -- so the conversion is presentation-only here. Display ranges are picked
 // for readability (a glider's rates/accels are well inside the sensor's ±2000
 // °/s / ±6 g full scale), independent of the sensor scaling in robot_specs.py.
-const latestImu = computed(() => imuLeft.value[0]?.value ?? null)
+const latestImu = computed(() => imu.value[0]?.value ?? null)
 const RAD_TO_DEG = 180 / Math.PI
 const MPS2_TO_MG = 1000 / 9.80665
 
@@ -162,7 +175,22 @@ const accelGauges = computed(() => {
           <DepthValveReadout />
         </div>
         <div class="model">
+          <button
+            class="view-toggle"
+            :class="{ active: modelView === 'locked' }"
+            @click="toggleModelView"
+            :title="modelView === 'locked'
+              ? 'Locked to inferred pitch/roll (drag spins yaw). Click for free-look.'
+              : 'Free-look orbit. Click to lock to inferred pitch/roll.'"
+          >
+            {{ modelView === 'locked' ? 'Locked' : 'Free-look' }}
+          </button>
           <UUVViewer
+            :view-mode="modelView"
+            :qx="poseQuat.x"
+            :qy="poseQuat.y"
+            :qz="poseQuat.z"
+            :qw="poseQuat.w"
             :ax="latestImu?.linear_acceleration?.x ?? 0"
             :ay="latestImu?.linear_acceleration?.y ?? 0"
             :az="latestImu?.linear_acceleration?.z ?? 0"
@@ -317,6 +345,30 @@ const accelGauges = computed(() => {
      gauge axis above it and the depth/subsystem gaps come out symmetric. */
   transform: translateX(-3.4%);
 }
+
+/* Free-look <-> locked toggle, pinned to the model canvas's top-right. Mirrors
+   the .unit-toggle styling used elsewhere so it reads as the same control. */
+.view-toggle {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 9px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  border: 1px solid var(--border-btn);
+  border-radius: var(--radius-xs);
+  background: var(--bg-btn);
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--transition), border-color var(--transition), color var(--transition);
+}
+.view-toggle:hover { background: var(--accent-hover-bg); border-color: var(--accent-border); color: var(--accent); }
+.view-toggle.active { color: var(--accent); border-color: var(--accent-border); }
 
 /* ── Init bar (bottom of centre column) ─────────────────────────────────── */
 /* Deploy-time toolbar; holds the lifeguard toggle. Styled as a horizontal

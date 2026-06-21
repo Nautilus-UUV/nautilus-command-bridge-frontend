@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useTelemetryStore } from '@/store/telemetry'
-import { paToDepthM } from '@/composables/useUnits'
+import { paToDepthM, ATMOSPHERIC_PA } from '@/composables/useUnits'
 import { trendOf } from '@/composables/useTrend'
 
 // Slim instrument strip that sits on the LEFT edge of the stage, hugging the
@@ -10,12 +10,17 @@ import { trendOf } from '@/composables/useTrend'
 // Read-only: the actual valve toggles live in the Debug Commands panel. Depth
 // is derived from the external pressure sensor (absolute Pa) so we show both
 // the metres figure and the raw Pa it came from, plus a direction-of-travel
-// triangle on the depth.
-const { externalPressure, bcuValves } = storeToRefs(useTelemetryStore())
+// triangle on the depth. The metres figure is referenced to the surface the
+// operator registered pre-dive (nautilus/status/init) so it reads ~0 at the
+// surface; until one is registered the standard atmosphere is the fallback --
+// the same SurfaceReference frame the glider's controllers use.
+const { externalPressure, bcuValves, surfaceReferencePa } = storeToRefs(useTelemetryStore())
 
 const latestExtPa = computed(() => externalPressure.value[0]?.value ?? null)
 const depthM = computed(() =>
-  latestExtPa.value === null ? null : paToDepthM(latestExtPa.value),
+  latestExtPa.value === null
+    ? null
+    : paToDepthM(latestExtPa.value, surfaceReferencePa.value ?? ATMOSPHERIC_PA),
 )
 // ~100 Pa deadband (~0.01 m) so a settled depth doesn't flicker the arrow.
 const depthTrend = computed(() => trendOf(externalPressure.value, { back: 5, eps: 100 }))

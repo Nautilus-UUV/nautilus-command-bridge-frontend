@@ -45,8 +45,7 @@ export const useTelemetryStore = defineStore('telemetry', () => {
 
   const position = ref<Sample<PoseMsg>[]>([])
   const positionTarget = ref<Sample<PoseMsg>[]>([])
-  const imuLeft = ref<Sample<ImuMsg>[]>([])
-  const imuRight = ref<Sample<ImuMsg>[]>([])
+  const imu = ref<Sample<ImuMsg>[]>([])
   const bcuPressure = ref<Sample<number>[]>([])
   const externalPressure = ref<Sample<number>[]>([])
   const bcuRpm = ref<Sample<number>[]>([])
@@ -54,6 +53,14 @@ export const useTelemetryStore = defineStore('telemetry', () => {
   const acuPitch = ref<Sample<number>[]>([])
   const acuRoll = ref<Sample<number>[]>([])
   const missionActive = ref<Sample<MissionActiveMsg>[]>([])
+
+  // The surface pressure the operator registered pre-dive, echoed (retained)
+  // on nautilus/status/init -- the gauge reference the glider's controllers
+  // convert against (physics.py::SurfaceReference). Held as a single scalar
+  // (not a charted ring buffer): null until a registration arrives, at which
+  // point depth readouts re-reference to it. DiveInitPanel piggy-backs the
+  // same broker subscription for the full init triple.
+  const surfaceReferencePa = ref<number | null>(null)
 
   function bindScalar(
     topic: string,
@@ -95,8 +102,7 @@ export const useTelemetryStore = defineStore('telemetry', () => {
   // Topic names must match EGRESS_MAP in py_pkg/mqtt/mqtt_bridge_node.py.
   bindPose('nautilus/telemetry/position/estimation', position, CAP_CHARTED)
   bindPose('nautilus/telemetry/position/target', positionTarget, CAP_STATE)
-  bindImu('nautilus/telemetry/imu/left', imuLeft, CAP_CHARTED)
-  bindImu('nautilus/telemetry/imu/right', imuRight, CAP_CHARTED)
+  bindImu('nautilus/telemetry/imu', imu, CAP_CHARTED)
   bindScalar('nautilus/telemetry/bcu/pressure', bcuPressure, CAP_CHARTED)
   bindScalar('nautilus/telemetry/external/pressure', externalPressure, CAP_CHARTED)
   bindScalar('nautilus/telemetry/bcu/rpm', bcuRpm, CAP_CHARTED)
@@ -114,11 +120,22 @@ export const useTelemetryStore = defineStore('telemetry', () => {
     )
   })
 
+  // Adopt the registered surface only when it's a finite positive number --
+  // mirrors SurfaceReference.register's non-positive rejection so a
+  // partially-filled init (missing fields decode to 0.0) can't shift the whole
+  // gauge frame by ~101 kPa.
+  mqtt.subscribe('nautilus/status/init', (payload) => {
+    const p = payload as { surface_pressure_pa?: unknown }
+    const surface = p?.surface_pressure_pa
+    if (typeof surface === 'number' && Number.isFinite(surface) && surface > 0) {
+      surfaceReferencePa.value = surface
+    }
+  })
+
   return {
     position,
     positionTarget,
-    imuLeft,
-    imuRight,
+    imu,
     bcuPressure,
     externalPressure,
     bcuRpm,
@@ -126,5 +143,6 @@ export const useTelemetryStore = defineStore('telemetry', () => {
     acuPitch,
     acuRoll,
     missionActive,
+    surfaceReferencePa,
   }
 })

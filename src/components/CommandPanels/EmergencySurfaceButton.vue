@@ -64,7 +64,7 @@ function onPointerUp(e: PointerEvent) {
   const frac = maxX.value > 0 ? thumbX.value / maxX.value : 0
   if (!armed.value && frac >= THRESHOLD) {
     armed.value = true
-    // Stop the active mission first so depth_node goes silent before bcu_debug
+    // Stop the active mission first so bcu_node goes silent before bcu_debug
     // blows ballast -- otherwise the depth PID would fight the surface burst.
     mqtt.stopMission()
     mqtt.publish(EMERGENCY_TOPIC, { data: true })

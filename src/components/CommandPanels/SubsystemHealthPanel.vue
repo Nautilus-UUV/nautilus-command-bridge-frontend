@@ -9,8 +9,8 @@ const { subsystems } = storeToRefs(useLivenessStore())
 // Compact instrument strip that hugs the RIGHT edge of the stage -- the mirror
 // twin of the depth+valve strip on the left. Tether first (the master gate),
 // then the glider subsystems. Liveness-correlated pairs (the two valves share a
-// bitmask, the two IMUs share a source in sim) collapse onto one row with a dot
-// each, so the strip reads as a tight "connections" list rather than ten boxes.
+// bitmask) collapse onto one row with a dot each, so the strip reads as a tight
+// "connections" list rather than ten boxes.
 // Wiring is unchanged: states come straight from useLivenessStore.
 interface Row { label: string; ids: SubsystemId[] }
 const ROWS: Row[] = [
@@ -19,7 +19,7 @@ const ROWS: Row[] = [
   { label: 'ACU Roll', ids: ['acu_roll'] },
   { label: 'BCU Pump', ids: ['bcu_pump'] },
   { label: 'Valves', ids: ['bcu_valve_1', 'bcu_valve_2'] },
-  { label: 'IMU L/R', ids: ['imu_left', 'imu_right'] },
+  { label: 'IMU', ids: ['imu'] },
   { label: 'Ext Press', ids: ['external_pressure'] },
   { label: 'Tank Press', ids: ['tank_pressure'] },
 ]

@@ -69,8 +69,7 @@ export type SubsystemId =
   | 'bcu_pump'
   | 'bcu_valve_1'
   | 'bcu_valve_2'
-  | 'imu_left'
-  | 'imu_right'
+  | 'imu'
   | 'external_pressure'
   | 'tank_pressure'
 

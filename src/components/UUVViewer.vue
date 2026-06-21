@@ -6,26 +6,50 @@ import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js'
 import { useTheme } from '@/composables/useTheme'
 
 // Central stage element: the UUV model suspended inside a gyroscope cage --
-// three orthogonal gimbal rings + a faint wireframe shell. Orientation is held
-// STATIC for now (identity quaternion default); the qw/qx/qy/qz props are kept
-// so wiring the cage to a live IMU attitude later is a one-line change at the
-// call site. Drag orbits the camera; the model and cage themselves don't move.
+// three orthogonal gimbal rings + a faint wireframe shell.
+//
+// Two view modes (viewMode prop):
+//   'freelook' -- the model sits level (identity) and drag orbits the camera
+//                 freely, exactly as the stage behaved before. Inspect the cage
+//                 from any angle; nothing tracks telemetry.
+//   'locked'   -- the model is tilted to the estimator's inferred roll/pitch
+//                 (qw/qx/qy/qz, the /position/estimation quaternion, yaw=0).
+//                 Drag is constrained to azimuth so the operator can still spin
+//                 the *view* in yaw -- which the glider can't observe -- while
+//                 roll and pitch stay pinned to the estimate.
 const props = withDefaults(
   defineProps<{
+    viewMode?: 'freelook' | 'locked'
+    // Estimator attitude quaternion (NED body frame, x/y/z/w). Applied to the
+    // model only in 'locked' mode; ignored (model stays level) in 'freelook'.
     qw?: number
     qx?: number
     qy?: number
     qz?: number
-    // Live translational acceleration in the IMU's FLU body frame (m/s^2):
-    // ax forward, ay left, az up. Drawn as a vector arrow from the cage centre,
+    // Live translational acceleration in the IMU's NED body frame (m/s^2):
+    // ax forward, ay right, az down. Drawn as a vector arrow from the cage centre,
     // length scaled by magnitude and clamped to the sphere. Defaults to zero
     // (no arrow) so the viewer still works without an IMU feed.
     ax?: number
     ay?: number
     az?: number
   }>(),
-  { qw: 1, qx: 0, qy: 0, qz: 0, ax: 0, ay: 0, az: 0 },
+  { viewMode: 'freelook', qw: 1, qx: 0, qy: 0, qz: 0, ax: 0, ay: 0, az: 0 },
 )
+
+// The scene is Y-up (x fwd, y up, z right); the estimator quaternion and the
+// accel vector are both in the NED body frame (x fwd, y right, z down). The
+// basis change between them is a single +90 deg rotation about scene X --
+// Q_NED_TO_SCENE, the one definition of the frame change (NED y-right -> scene
+// z-right, NED z-down -> scene -y). A NED *vector* maps straight through it; a
+// NED *attitude* is re-expressed by conjugation, q_scene = Qc * q_ned * Qc^-1,
+// where Q_SCENE_TO_NED is the (constant) inverse. Shared by the model and the
+// arrow so both ride the same tilt.
+const Q_NED_TO_SCENE = new THREE.Quaternion().setFromAxisAngle(
+  new THREE.Vector3(1, 0, 0),
+  Math.PI / 2,
+)
+const Q_SCENE_TO_NED = Q_NED_TO_SCENE.clone().invert()
 
 const { isDark } = useTheme()
 const canvasRef = ref<HTMLCanvasElement | null>(null)
@@ -123,7 +147,11 @@ async function buildScene() {
   // UUV model
   const loader = new STLLoader()
   const geometry = await loader.loadAsync('/models/uuv.stl').catch((err) => { console.error('Failed to load uuv.stl:', err); throw err })
-  // STL ships with length axis vertical — lay it flat so nose points along +X
+  // STL ships with length axis vertical — lay it flat so the nose points along
+  // +X with the dorsal side (rudder) facing +Y (scene up). The -pi/2 roll about
+  // X is the right-side-up rest pose; the NED z-down convention is carried by the
+  // Q_NED_TO_SCENE conjugation in updateSceneAttitude, NOT by this rest pose, so
+  // baking it in here too would double-correct and render the model belly-up.
   geometry.rotateZ(-Math.PI / 2)
   geometry.rotateX(-Math.PI / 2)
   geometry.computeVertexNormals()
@@ -225,16 +253,38 @@ function buildControls() {
   controls.update()
 }
 
-function applyQuaternion() {
-  if (!uuvMesh) return
+// The model's orientation in scene coords, cached so it's recomputed only when
+// the attitude or view mode changes (see watches) -- not per frame. In 'locked'
+// mode this is the estimator's NED attitude conjugated into the scene frame; in
+// 'freelook' (or with a degenerate quaternion) it's identity, so the model
+// stays level. The accel arrow reads the same cache so it rides the tilt.
+const sceneQuat = new THREE.Quaternion()
+
+function updateSceneAttitude() {
   const q = new THREE.Quaternion(props.qx, props.qy, props.qz, props.qw)
-  if (q.lengthSq() < 0.001) q.set(0, 0, 0, 1)
-  else q.normalize()
-  uuvMesh.setRotationFromQuaternion(q)
+  if (props.viewMode !== 'locked' || q.lengthSq() < 0.001) sceneQuat.identity()
+  else sceneQuat.copy(Q_NED_TO_SCENE).multiply(q.normalize()).multiply(Q_SCENE_TO_NED)
+  if (uuvMesh) uuvMesh.setRotationFromQuaternion(sceneQuat)
 }
 
-// Drive the acceleration arrow from the live FLU body vector. Maps the body
-// frame (x fwd, y left, z up) into the scene's axes (x fwd, y up, z = -left),
+// Constrain orbit by view mode: free in 'freelook'; azimuth-only in 'locked'
+// (lock the polar angle to the current elevation so drag spins the view in yaw
+// but can't change pitch/roll of the camera).
+function applyViewMode() {
+  if (!controls) return
+  if (props.viewMode === 'locked') {
+    const polar = controls.getPolarAngle()
+    controls.minPolarAngle = polar
+    controls.maxPolarAngle = polar
+  } else {
+    controls.minPolarAngle = 0
+    controls.maxPolarAngle = Math.PI
+  }
+  controls.update()
+}
+
+// Drive the acceleration arrow from the live NED body vector. Maps the body
+// frame (x fwd, y right, z down) into the scene's axes (x fwd, y up, z right),
 // rides the model's attitude quaternion so it tracks the cage when wired live,
 // scales length by magnitude (clamped to the sphere), and lerps both direction
 // and length toward the latest sample so the 10 Hz stream glides.
@@ -246,12 +296,10 @@ function updateAccelArrow() {
     mag <= ARROW_MIN_MPS2 ? 0 : Math.min((mag / ACCEL_REF_MPS2) * fullLen, fullLen)
 
   if (mag > ARROW_MIN_MPS2) {
-    // FLU body -> scene axes, then rotate by the model's current attitude.
-    arrowDir.set(props.ax, props.az, -props.ay).normalize()
-    const q = new THREE.Quaternion(props.qx, props.qy, props.qz, props.qw)
-    if (q.lengthSq() < 0.001) q.set(0, 0, 0, 1)
-    else q.normalize()
-    arrowDir.applyQuaternion(q)
+    // NED body -> scene basis (Q_NED_TO_SCENE), then the model's cached attitude
+    // so the arrow rides the tilt (identity in freelook, the estimate in locked).
+    arrowDir.set(props.ax, props.ay, props.az).normalize()
+    arrowDir.applyQuaternion(Q_NED_TO_SCENE).applyQuaternion(sceneQuat)
     arrowQuat.slerp(new THREE.Quaternion().setFromUnitVectors(ARROW_UP, arrowDir), ARROW_SMOOTH)
   }
 
@@ -342,8 +390,7 @@ function resize() {
 function animate() {
   animId = requestAnimationFrame(animate)
   controls.update()          // needed for damping
-  applyQuaternion()
-  updateAccelArrow()
+  updateAccelArrow()         // reads the cached sceneQuat; attitude is set on change
   renderer.render(scene, camera)
 }
 
@@ -353,6 +400,8 @@ onMounted(async () => {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
   await buildScene()
   buildControls()
+  updateSceneAttitude()      // seed the model attitude from the initial props
+  applyViewMode()
   resize()
   animate()
   ro = new ResizeObserver(resize)
@@ -367,7 +416,8 @@ onBeforeUnmount(() => {
 })
 
 watch(isDark, updateColors)
-watch(() => [props.qw, props.qx, props.qy, props.qz], applyQuaternion)
+watch(() => [props.qw, props.qx, props.qy, props.qz, props.viewMode], updateSceneAttitude)
+watch(() => props.viewMode, applyViewMode)
 </script>
 
 <template>

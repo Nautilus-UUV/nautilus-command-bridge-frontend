@@ -2,10 +2,13 @@
 // streams on the Telemetry tab. Mirrors the useTheme.ts pattern -- one
 // module-level ref, persisted to localStorage, applied via watch.
 //
-// Hydrostatic conversion follows physics.py in py_pkg: depth = (P_abs - P_atm)
-// / (rho * g) with salt-water density. This matches what the controllers
-// reason about, so a depth reading in the UI corresponds to the value the
-// EKF / depth_node sees internally.
+// Hydrostatic conversion follows physics.py in py_pkg: depth = (P_abs - P_ref)
+// / (rho * g) with salt-water density. The reference is the surface the
+// operator registered pre-dive (DIVE_INIT) -- the same SurfaceReference frame
+// every pressure-consuming node on the glider converts against -- so a depth
+// reading in the UI matches what the EKF / bcu_node sees internally and
+// reads ~0 at the registered surface. Until a surface is registered the
+// standard atmosphere below is the fallback, matching the glider.
 //
 // Note: the existing CommandProfilePanel.vue uses a gauge-Pa / fresh-water
 // gradient for the *setpoint* fields (target_pressure_pa is gauge). That
@@ -35,10 +38,12 @@ watch(pressureUnit, (v) => {
   if (typeof window !== 'undefined') localStorage.setItem(STORAGE_KEY, v)
 })
 
-// Absolute Pa -> depth m. Negative for above-atmosphere readings (sensor
-// noise at the surface). Caller decides how to clamp/format.
-export function paToDepthM(absolutePa: number): number {
-  return (absolutePa - ATMOSPHERIC_PA) / PA_PER_M_ABSOLUTE
+// Absolute Pa -> depth m against a surface reference (defaults to the standard
+// atmosphere when the operator hasn't registered one). Negative for readings
+// above the reference (sensor noise at the surface). Caller decides how to
+// clamp/format.
+export function paToDepthM(absolutePa: number, referencePa = ATMOSPHERIC_PA): number {
+  return (absolutePa - referencePa) / PA_PER_M_ABSOLUTE
 }
 
 export function depthMToPa(m: number): number {
