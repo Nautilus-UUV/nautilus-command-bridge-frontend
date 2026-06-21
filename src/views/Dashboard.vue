@@ -20,7 +20,7 @@ import CommandProfilePanel from '@/components/CommandPanels/CommandProfilePanel.
 // dial (or any future metric) is one more object here + its accessor -- the
 // fluid flex-wrap container reflows on its own. Ranges are grounded in
 // robot_specs.py (BCU_MOTOR_MAX_RPM, ACU_PITCH_MAX_TRAVEL_M, ACU_ROLL_MAX_ANGLE).
-const { bcuRpm, bcuFeedbackRpm, acuPitch, acuRoll, bcuPressure, imu, position } = storeToRefs(useTelemetryStore())
+const { bcuRpm, bcuFeedbackRpm, acuPitch, acuRoll, bcuPressure, externalTemperature, imu, position } = storeToRefs(useTelemetryStore())
 
 const latest = (s: { value: { value: number }[] }) => s.value[0]?.value ?? null
 
@@ -77,6 +77,14 @@ const gauges = computed(() => {
       value: rollRaw === null ? null : rollRaw / 100, // wire is centidegrees
       min: -30, max: 30, signed: true, unit: 'deg', decimals: 1,
       trend: trendOf(acuRoll.value, { back: 5, eps: 10 }), // 10 cdeg = 0.1 deg
+    },
+    {
+      // Seawater temperature, already in °C off the bridge -- passes through.
+      key: 'ext-temp',
+      label: 'Ext Temp',
+      value: latest(externalTemperature),
+      min: 0, max: 30, signed: false, unit: '°C', decimals: 1,
+      trend: trendOf(externalTemperature.value, { back: 5, eps: 0.1 }), // 0.1 °C deadband
     },
   ]
 })
@@ -275,6 +283,8 @@ const accelGauges = computed(() => {
   /* Inset from the column edges so the two groups sit a little further in,
      toward the model, rather than hard against the outer margins. */
   padding: 0 56px;
+  /* Nudge the two IMU groups down a touch, off the gauge row above them. */
+  margin-top: 12px;
 }
 /* Transparent: no card chrome, just the title + dials sitting on the page. */
 .data-box {

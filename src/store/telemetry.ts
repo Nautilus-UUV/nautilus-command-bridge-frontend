@@ -20,6 +20,7 @@ import type {
   PoseMsg,
   Sample,
   ScalarMsg,
+  TemperatureMsg,
 } from '@/types/TelemetryTypes'
 
 const CAP_CHARTED = 600
@@ -48,6 +49,7 @@ export const useTelemetryStore = defineStore('telemetry', () => {
   const imu = ref<Sample<ImuMsg>[]>([])
   const bcuPressure = ref<Sample<number>[]>([])
   const externalPressure = ref<Sample<number>[]>([])
+  const externalTemperature = ref<Sample<number>[]>([])
   const bcuRpm = ref<Sample<number>[]>([])
   const bcuFeedbackRpm = ref<Sample<number>[]>([])
   const bcuValves = ref<Sample<number>[]>([])
@@ -99,6 +101,24 @@ export const useTelemetryStore = defineStore('telemetry', () => {
     })
   }
 
+  // sensor_msgs/Temperature carries the reading in `temperature` (Celsius), not
+  // the std_msgs `.data` that bindScalar reads -- hence its own binder.
+  function bindTemperature(
+    topic: string,
+    target: { value: Sample<number>[] },
+    cap: number,
+  ) {
+    mqtt.subscribe(topic, (payload) => {
+      const msg = payload as TemperatureMsg
+      if (typeof msg?.temperature !== 'number') return
+      pushCapped(
+        target.value,
+        { recordDatetime: nowIso(), value: msg.temperature },
+        cap,
+      )
+    })
+  }
+
   // --- subscriptions ----------------------------------------------------
   // Topic names must match EGRESS_MAP in py_pkg/mqtt/mqtt_bridge_node.py.
   bindPose('nautilus/telemetry/position/estimation', position, CAP_CHARTED)
@@ -106,6 +126,11 @@ export const useTelemetryStore = defineStore('telemetry', () => {
   bindImu('nautilus/telemetry/imu', imu, CAP_CHARTED)
   bindScalar('nautilus/telemetry/bcu/pressure', bcuPressure, CAP_CHARTED)
   bindScalar('nautilus/telemetry/external/pressure', externalPressure, CAP_CHARTED)
+  bindTemperature(
+    'nautilus/telemetry/external/temperature',
+    externalTemperature,
+    CAP_CHARTED,
+  )
   bindScalar('nautilus/telemetry/bcu/rpm', bcuRpm, CAP_CHARTED)
   bindScalar('nautilus/telemetry/bcu/feedback/rpm', bcuFeedbackRpm, CAP_CHARTED)
   bindScalar('nautilus/telemetry/bcu/valves', bcuValves, CAP_STATE)
@@ -140,6 +165,7 @@ export const useTelemetryStore = defineStore('telemetry', () => {
     imu,
     bcuPressure,
     externalPressure,
+    externalTemperature,
     bcuRpm,
     bcuFeedbackRpm,
     bcuValves,

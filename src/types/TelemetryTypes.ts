@@ -32,6 +32,15 @@ export interface ImuMsg {
 // BCU flow rate (Float32), valves (UInt8), ACU pitch/roll (Int16).
 export interface ScalarMsg<T = number> { data: T }
 
+// sensor_msgs/Temperature -- /external/temperature (and /internal/temperature).
+// `temperature` is already in Celsius (stm_com applies STM_TEMPERATURE_LSB_C),
+// so the dial passes it through with no conversion.
+export interface TemperatureMsg {
+  header: RosHeader
+  temperature: number   // Celsius
+  variance: number
+}
+
 // Bridge-synthesised mirror of /path + /command. Not a ROS message --
 // constructed inside mqtt_bridge_node.py._publish_mission_active().
 export type MissionState = 'IDLE' | 'LOADED' | 'RUNNING'
