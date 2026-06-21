@@ -13,6 +13,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { useMqttBridgeStore } from '@/store/mqttBridge'
+import { useDbWriterStore } from '@/store/dbWriter'
 import type {
   DiagnosticArrayMsg,
   HealthState,
@@ -35,6 +36,7 @@ const GLIDER_ROWS: SubsystemId[] = [
 
 export const useLivenessStore = defineStore('liveness', () => {
   const mqtt = useMqttBridgeStore()
+  const dbWriter = useDbWriterStore()
 
   // Raw glider-row states straight off the DiagnosticArray, before gating.
   const raw = ref<Record<string, HealthState>>({})
@@ -63,12 +65,16 @@ export const useLivenessStore = defineStore('liveness', () => {
   })
 
   // Master gate: only trust the glider rows while the tether is online.
+  // The Database row is exempt -- the logger is a local laptop process,
+  // alive or not regardless of the tether, so it reads its own liveness
+  // straight through the gate.
   const subsystems = computed<Record<SubsystemId, HealthState>>(() => {
     const gated = tether.value !== 'online'
     const out = { tether: tether.value } as Record<SubsystemId, HealthState>
     for (const row of GLIDER_ROWS) {
       out[row] = gated ? 'unknown' : raw.value[row] ?? 'offline'
     }
+    out.database = dbWriter.writerState
     return out
   })
 

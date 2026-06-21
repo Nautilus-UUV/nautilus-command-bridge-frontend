@@ -122,9 +122,9 @@ function toggle(): void {
   position: relative; /* above the init-bar's ::before fill */
   z-index: 1;
   overflow: hidden; /* clips the emission sweep to the button */
-  min-width: 300px;
+  min-width: 268px;
   height: 38px;
-  padding: 0 24px;
+  padding: 0 20px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-btn);
   background: var(--bg-btn);

@@ -162,7 +162,7 @@ function initialize(): void {
   z-index: 1;
   display: flex;
   align-items: flex-end;
-  gap: 8px;
+  gap: 7px;
 }
 
 .di-group {
@@ -183,7 +183,7 @@ function initialize(): void {
 }
 
 .di-group input {
-  width: 104px;
+  width: 82px;
   min-width: 0;
   padding: 4px 6px;
   font-family: var(--font-ui);
@@ -205,7 +205,7 @@ function initialize(): void {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
+  width: 24px;
   border: 1px solid var(--border-btn);
   border-radius: var(--radius-xs);
   background: var(--bg-btn);
@@ -229,7 +229,7 @@ function initialize(): void {
   align-items: center;
   justify-content: center;
   height: 27px; /* match the input row height so the bar reads as one line */
-  padding: 0 14px;
+  padding: 0 12px;
   font-family: var(--font-ui);
   font-size: 11px;
   font-weight: 600;

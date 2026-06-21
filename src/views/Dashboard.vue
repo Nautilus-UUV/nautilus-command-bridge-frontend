@@ -10,6 +10,7 @@ import UUVViewer from '@/components/UUVViewer.vue'
 import EmergencySurfaceButton from '@/components/CommandPanels/EmergencySurfaceButton.vue'
 import LifeguardToggle from '@/components/CommandPanels/LifeguardToggle.vue'
 import DiveInitPanel from '@/components/CommandPanels/DiveInitPanel.vue'
+import DbWriterControl from '@/components/CommandPanels/DbWriterControl.vue'
 import DebugCommandsPanel from '@/components/CommandPanels/DebugCommandsPanel.vue'
 import ResetButton from '@/components/CommandPanels/ResetButton.vue'
 import SubsystemHealthPanel from '@/components/CommandPanels/SubsystemHealthPanel.vue'
@@ -222,6 +223,8 @@ const accelGauges = computed(() => {
         <LifeguardToggle />
         <div class="init-sep" aria-hidden="true"></div>
         <DiveInitPanel />
+        <div class="init-sep" aria-hidden="true"></div>
+        <DbWriterControl />
       </div>
     </div>
 
@@ -397,7 +400,7 @@ const accelGauges = computed(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 22px;
+  gap: 16px;
   padding: 0 16px;
   /* Sharp top-inward trapezoid (SpaceX-console bar). clip-path clips the CSS
      border away on the slanted edges, so the 1px outline is faked with two

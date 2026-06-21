@@ -1,0 +1,6 @@
+# Runtime artifacts -- the DuckDB store, rolling parquet, and the venv. The
+# code is tracked; the recorded data is not.
+data/
+.venv/
+__pycache__/
+*.pyc

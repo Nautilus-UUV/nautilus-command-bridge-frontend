@@ -22,6 +22,8 @@ const ROWS: Row[] = [
   { label: 'IMU', ids: ['imu'] },
   { label: 'Ext Press', ids: ['external_pressure'] },
   { label: 'Tank Press', ids: ['tank_pressure'] },
+  // Local DuckDB logger -- last row, off the tether gate (see liveness store).
+  { label: 'Database', ids: ['database'] },
 ]
 
 const TONE: Record<HealthState, string> = {

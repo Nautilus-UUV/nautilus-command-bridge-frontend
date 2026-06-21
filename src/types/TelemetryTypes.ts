@@ -68,9 +68,10 @@ export interface Sample<T> {
 // as a control-char string, not a number, so it can't be compared to 0 here.
 export type HealthState = 'online' | 'offline' | 'unknown'
 
-// The ten rows the Link & Subsystems panel renders. `tether` is frontend-only
+// The rows the Link & Subsystems panel renders. `tether` is frontend-only
 // (derived from the bridge link); the nine glider rows are DiagnosticStatus
-// names emitted by py_pkg.liveness.liveness_node.
+// names emitted by py_pkg.liveness.liveness_node; `database` is the local
+// DuckDB logger's liveness (off nautilus/db/status), independent of the tether.
 export type SubsystemId =
   | 'tether'
   | 'acu_pitch'
@@ -81,6 +82,7 @@ export type SubsystemId =
   | 'imu'
   | 'external_pressure'
   | 'tank_pressure'
+  | 'database'
 
 // diagnostic_msgs/DiagnosticStatus, trimmed to the fields the UI uses. `level`
 // is intentionally omitted -- see HealthState.
