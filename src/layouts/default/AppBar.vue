@@ -1,29 +1,10 @@
 <script lang="ts" setup>
-import { watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
 import { useTheme } from '@/composables/useTheme'
-import { useAppMode } from '@/composables/useAppMode'
-import type { AppMode } from '@/composables/useAppMode'
 
-const route = useRoute()
-const router = useRouter()
+// Single-page dashboard: the top bar is just brand + theme toggle. The old nav
+// links, Controller/Viewer mode switch, and m/Pa unit toggle are gone (depth
+// shows both m and Pa inline on the stage).
 const { isDark, toggleTheme } = useTheme()
-const { mode, setMode, isViewer } = useAppMode()
-
-function onModeChange(m: AppMode) {
-  setMode(m)
-  // If switching to viewer while on a controller-only page, redirect to telemetry
-  if (m === 'viewer' && (route.name === 'Commands' || route.name === 'Simulations')) {
-    router.push({ name: 'Charts' })
-  }
-}
-
-// Guard: redirect away from controller-only pages in viewer mode
-watch(() => route.name, (name) => {
-  if (isViewer.value && (name === 'Commands' || name === 'Simulations')) {
-    router.push({ name: 'Charts' })
-  }
-})
 </script>
 
 <template>
@@ -39,65 +20,7 @@ watch(() => route.name, (name) => {
       </div>
     </v-app-bar-title>
 
-    <!-- Nav -->
-    <nav class="nav-links">
-      <router-link
-        :to="{ name: 'Charts' }"
-        class="nav-link"
-        :class="{ active: route.name === 'Charts' }"
-      >
-        <v-icon size="12" class="mr-1">mdi-chart-line</v-icon>
-        Telemetry
-      </router-link>
-      <router-link
-        v-if="!isViewer"
-        :to="{ name: 'Commands' }"
-        class="nav-link"
-        :class="{ active: route.name === 'Commands' }"
-      >
-        <v-icon size="12" class="mr-1">mdi-console</v-icon>
-        Commands
-      </router-link>
-      <router-link
-        v-if="!isViewer"
-        :to="{ name: 'Simulations' }"
-        class="nav-link"
-        :class="{ active: route.name === 'Simulations' }"
-      >
-        <v-icon size="12" class="mr-1">mdi-flask-outline</v-icon>
-        Simulations
-      </router-link>
-      <router-link
-        :to="{ name: 'Debug' }"
-        class="nav-link"
-        :class="{ active: route.name === 'Debug' }"
-      >
-        <v-icon size="12" class="mr-1">mdi-bug-outline</v-icon>
-        Debug
-      </router-link>
-    </nav>
-
-    <!-- Mode selector -->
-    <div class="mode-select">
-      <button
-        class="mode-btn"
-        :class="{ active: mode === 'controller' }"
-        @click="onModeChange('controller')"
-        title="Controller — full control + telemetry"
-      >
-        <v-icon size="12" class="mr-1">mdi-gamepad-variant-outline</v-icon>
-        Controller
-      </button>
-      <button
-        class="mode-btn"
-        :class="{ active: mode === 'viewer' }"
-        @click="onModeChange('viewer')"
-        title="Viewer — read-only telemetry"
-      >
-        <v-icon size="12" class="mr-1">mdi-eye-outline</v-icon>
-        Viewer
-      </button>
-    </div>
+    <v-spacer />
 
     <!-- Theme toggle -->
     <button class="theme-btn" @click="toggleTheme" :title="isDark ? 'Switch to light mode' : 'Switch to dark mode'">
@@ -133,74 +56,6 @@ watch(() => route.name, (name) => {
   color: var(--text-muted);
   margin-left: 10px;
   line-height: 1;
-}
-
-/* ── Nav ───────────────────────────────────────────────────────────────── */
-.nav-links {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  margin: 0 16px;
-}
-
-.nav-link {
-  display: inline-flex;
-  align-items: center;
-  padding: 4px 11px;
-  font-family: var(--font-ui);
-  font-size: 11.5px;
-  font-weight: 500;
-  color: var(--text-muted);
-  text-decoration: none;
-  border: 1px solid transparent;
-  border-radius: var(--radius-xs);
-  transition: background var(--transition), border-color var(--transition), color var(--transition);
-  letter-spacing: 0.02em;
-}
-.nav-link:hover {
-  background: var(--accent-hover-bg);
-  border-color: var(--accent-border);
-  color: var(--text);
-}
-.nav-link.active {
-  background: var(--accent-active-bg);
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-/* ── Mode selector ────────────────────────────────────────────────────── */
-.mode-select {
-  display: flex;
-  gap: 4px;
-  margin-left: 24px;
-  margin-right: 12px;
-  flex-shrink: 0;
-}
-
-.mode-btn {
-  display: inline-flex;
-  align-items: center;
-  padding: 3px 9px;
-  font-family: var(--font-ui);
-  font-size: 10.5px;
-  font-weight: 500;
-  color: var(--text-hint);
-  border: 1px solid var(--border-btn);
-  border-radius: var(--radius-xs);
-  cursor: pointer;
-  background: var(--bg-btn);
-  transition: background var(--transition), border-color var(--transition), color var(--transition);
-  letter-spacing: 0.02em;
-}
-.mode-btn:hover {
-  background: var(--accent-hover-bg);
-  border-color: var(--accent-border);
-  color: var(--text);
-}
-.mode-btn.active {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
 }
 
 /* ── Theme button ──────────────────────────────────────────────────────── */

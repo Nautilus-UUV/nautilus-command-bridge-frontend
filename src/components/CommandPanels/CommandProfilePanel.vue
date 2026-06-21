@@ -21,9 +21,9 @@ interface ProfileOption {
 }
 
 const profileOptions: ProfileOption[] = [
-  { value: 'trim',     title: 'Trim & Neutral', hint: 'Hold a depth, zero pitch/roll. Does not self-terminate.' },
-  { value: 'sawtooth', title: 'Sawtooth',       hint: 'Glide down at -pitch, up at +pitch, for N cycles.' },
-  { value: 'surface',  title: 'Surface',        hint: 'Ascend to gauge 0 Pa and hold. Self-terminates.' },
+  { value: 'trim',      title: 'Trim & Neutral', hint: 'Hold a depth, zero pitch/roll. Does not self-terminate.' },
+  { value: 'sawtooth',  title: 'Sawtooth',       hint: 'Glide down at -pitch, up at +pitch, for N cycles.' },
+  { value: 'surface',   title: 'Surface',        hint: 'Ascend to gauge 0 Pa and hold. Self-terminates.' },
 ]
 
 // Source of truth is always Pa and rad -- the toggle below only changes
@@ -90,15 +90,8 @@ const angleUnitLabel    = computed(() => operatorUnits.value ? 'deg' : 'rad')
 const mqttStore = useMqttBridgeStore()
 const { connected, bridgeStatus } = storeToRefs(mqttStore)
 
-const statusBadge = computed(() => {
-  switch (bridgeStatus.value) {
-    case 'online':     return { label: 'bridge online',   tone: 'ok'   }
-    case 'offline':    return { label: 'bridge offline',  tone: 'warn' }
-    case 'link_lost':  return { label: 'tether lost',     tone: 'err'  }
-    case 'connecting': return { label: 'connecting...',   tone: 'warn' }
-  }
-})
-
+// bridgeStatus gates Send/Stop so commands can't be fired over a dead tether.
+// (Link health lives in the Link & Subsystems panel, SubsystemHealthPanel.vue.)
 const sendDisabled = computed(() =>
   !connected.value || bridgeStatus.value !== 'online'
 )
@@ -123,19 +116,24 @@ function buildMissionCommand(): { mission_id: number; target_pressure_pa: number
 
 function onSend() {
   if (sendDisabled.value) return
-  const cmd = buildMissionCommand()
-  // /path first so the pathfinder is in LOADED state before /command:start
-  // arrives. They're QoS 1 so reordering is unlikely, but ordering the
-  // publish calls is free insurance.
-  mqttStore.publish('nautilus/cmd/path', cmd)
-  mqttStore.publish('nautilus/cmd/command', { data: 'start' })
+  // startMission clears any lingering debug hold, loads /path, then starts
+  // (Bool true on /command). Ordering is handled in the store.
+  mqttStore.startMission(buildMissionCommand())
+}
+
+function onStop() {
+  if (sendDisabled.value) return
+  // Bool false on /command: stop the mission and reset the stack to idle.
+  mqttStore.stopMission()
 }
 </script>
 
 <template>
-<SimpleCardWrapper title="Dive Profile" style="min-height: 400px">
+<SimpleCardWrapper title="Dive Profile">
 
-  <!-- Header row: profile picker + unit toggle + link status -->
+  <div class="lock-target">
+
+  <!-- Header row: profile picker + unit toggle -->
   <div class="header-row">
     <div class="profile-select-wrap">
       <v-select
@@ -188,29 +186,41 @@ function onSend() {
       </label>
     </div>
 
-    <div v-else class="surface-note">
+    <div v-else-if="selected === 'surface'" class="surface-note">
       <v-icon size="20" style="color: var(--text-muted)">mdi-arrow-up-bold-outline</v-icon>
       <span>No parameters. Glider will ascend to gauge 0 Pa.</span>
     </div>
 
   </div>
 
-  <!-- Footer: link status + send -->
+  <!-- Footer: stop + send -->
   <div class="footer-row">
-    <span class="status-badge" :class="statusBadge.tone">
-      <span class="status-dot" />
-      {{ statusBadge.label }}
-    </span>
+    <button class="nb-btn stop-btn" @click="onStop" :disabled="sendDisabled">
+      <v-icon size="12" class="mr-1">mdi-stop</v-icon>
+      Stop
+    </button>
     <button class="nb-btn accent-btn" @click="onSend" :disabled="sendDisabled">
       <v-icon size="12" class="mr-1">mdi-send</v-icon>
       Send
     </button>
   </div>
 
+  </div>
+
 </SimpleCardWrapper>
 </template>
 
 <style scoped>
+/* The lock wrapper takes over the card's flex column so the param-area still
+   grows and the footer stays pinned to the bottom (matches the old layout
+   where these were direct children of the card body). */
+.lock-target {
+  display: flex; flex-direction: column;
+  gap: 12px;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
 .header-row {
   display: flex; align-items: center; gap: 8px;
 }
@@ -219,7 +229,7 @@ function onSend() {
 .unit-toggle {
   display: inline-flex; align-items: center;
   padding: 5px 10px;
-  font-family: var(--font-mono); font-size: 11px; font-weight: 500;
+  font-family: var(--font-mono); font-size: 12px; font-weight: 500;
   border: 1px solid var(--border-btn);
   border-radius: var(--radius-xs);
   background: var(--bg-btn); color: var(--text-muted);
@@ -231,7 +241,7 @@ function onSend() {
 
 .hint {
   font-family: var(--font-ui);
-  font-size: 11.5px;
+  font-size: 13px;
   color: var(--text-muted);
   line-height: 1.5;
   margin: 0;
@@ -252,12 +262,12 @@ function onSend() {
 }
 .field-label {
   font-family: var(--font-ui);
-  font-size: 10.5px; font-weight: 500;
+  font-size: 12px; font-weight: 500;
   text-transform: uppercase; letter-spacing: 0.06em;
   color: var(--text-muted);
 }
 .field-grid input {
-  font-family: var(--font-mono); font-size: 13px;
+  font-family: var(--font-mono); font-size: 14px;
   padding: 7px 10px;
   background: var(--bg-input, var(--bg-btn));
   color: var(--text);
@@ -267,43 +277,27 @@ function onSend() {
   transition: border-color var(--transition);
 }
 .field-grid input:focus { border-color: var(--accent); }
+.field-grid input:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .surface-note {
   display: flex; align-items: center; gap: 10px;
   padding: 16px;
-  font-family: var(--font-ui); font-size: 12px;
+  font-family: var(--font-ui); font-size: 13px;
   color: var(--text-muted);
-  border: 1px dashed var(--border);
+  border: 1px dashed var(--panel-dive-border);
   border-radius: var(--radius-xs);
 }
 
 .footer-row {
-  display: flex; align-items: center; justify-content: space-between;
+  display: flex; align-items: center; justify-content: flex-end;
   gap: 8px;
   margin-top: auto;
-}
-
-.status-badge {
-  display: inline-flex; align-items: center; gap: 6px;
-  font-family: var(--font-mono); font-size: 10.5px; font-weight: 500;
-  letter-spacing: 0.04em;
-  padding: 3px 8px;
-  border: 1px solid;
-  border-radius: 2px;
-}
-.status-badge.ok   { background: var(--status-ok-bg);  color: var(--status-ok-text);  border-color: var(--status-ok-border); }
-.status-badge.warn { background: var(--status-q-bg);   color: var(--status-q-text);   border-color: var(--status-q-border); }
-.status-badge.err  { background: var(--status-err-bg); color: var(--status-err-text); border-color: var(--status-err-border); }
-
-.status-dot {
-  width: 6px; height: 6px; border-radius: 50%;
-  background: currentColor;
 }
 
 .nb-btn {
   display: inline-flex; align-items: center;
   padding: 6px 14px;
-  font-size: 12px; font-family: var(--font-ui); font-weight: 500;
+  font-size: 13.5px; font-family: var(--font-ui); font-weight: 500;
   border: 1px solid var(--border-btn);
   border-radius: var(--radius-xs);
   cursor: pointer; background: var(--bg-btn); color: var(--text-btn);
@@ -318,4 +312,10 @@ function onSend() {
   background: var(--accent); border-color: var(--accent); color: #fff;
 }
 .accent-btn:hover:not(:disabled) { filter: brightness(1.1); color: #fff; }
+
+.stop-btn {
+  background: var(--status-err-bg); border-color: var(--status-err-border);
+  color: var(--status-err-text);
+}
+.stop-btn:hover:not(:disabled) { filter: brightness(1.06); color: var(--status-err-text); }
 </style>

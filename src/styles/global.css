@@ -30,6 +30,16 @@
   --accent-hover-bg:  #e6eef8;
   --accent-active-bg: #d4e2f4;
   --accent-border:    #8aaddc;
+  --accent-glow:      rgba(74,127,203,0.16);
+  --gauge-track:      #d8dde4;
+
+  /* Decorative panel accents — UI chrome only, no semantic meaning. Each
+     dashboard panel gets its own hue so the screen reads as distinct
+     instruments rather than one gray field. */
+  --panel-depth-accent:  #2f6fc4;  --panel-depth-border:  #9cb9e6;
+  --panel-subsys-accent: #7a55c8;  --panel-subsys-border: #c2afe8;
+  --panel-cmd-accent:    #b8791f;  --panel-cmd-border:    #d99f3a;
+  --panel-dive-accent:   var(--accent);  --panel-dive-border:  var(--accent);
 
   --metric-value:     #0e0e18;
   --metric-value-lg:  40px;
@@ -59,64 +69,94 @@
 }
 
 /* ── CSS variables — dark ────────────────────────────────────────────────── */
+/* SpaceX-console retune: near-black NEUTRAL charcoal, not navy. The old palette
+   carried a blue cast in every surface (the blue channel ran ~10 levels hot);
+   that bias is pulled out here so the background reads as black and the
+   cyan/gold/status accents — all kept untouched — pop harder against the neutral
+   field. A dim radial lift (--bg-glow) is layered onto .v-main, centred behind
+   the 3D model, so the screen has depth instead of one flat slab. */
 html.dark {
-  --bg:               #0d0d12;
-  --bg-panel:         #16161e;
-  --bg-sidebar:       #111118;
-  --bg-appbar:        #0f0f16;
-  --bg-input:         #1c1c26;
-  --bg-table-head:    #1a1a24;
-  --bg-btn:           #1e1e2a;
-  --bg-code:          #1a1c2c;
+  --bg:               #0a0b0d;
+  --bg-panel:         #101216;
+  --bg-sidebar:       #0c0d10;
+  --bg-appbar:        #0a0b0e;
+  --bg-input:         #16181d;
+  --bg-table-head:    #131519;
+  --bg-btn:           #16181d;
+  --bg-code:          #131519;
 
-  --border:           #26263a;
-  --border-sidebar:   #1e1e2e;
-  --border-input:     #2e2e42;
-  --border-btn:       #2c2c40;
-  --border-divider:   #1e1e2e;
+  --border:           #242832;
+  --border-sidebar:   #1c1f27;
+  --border-input:     #2e323c;
+  --border-btn:       #2b2f39;
+  --border-divider:   #191b21;
 
-  --text:             #dcdce8;
-  --text-muted:       #7070a0;
-  --text-hint:        #40404e;
-  --text-btn:         #b0b0c8;
-  --text-mono:        #8888b0;
-  --text-label:       #7070a0;
+  --text:             #e3e7ec;
+  --text-muted:       #8b909b;
+  --text-hint:        #474c56;
+  --text-btn:         #b2b8c1;
+  --text-mono:        #969ca7;
+  --text-label:       #868c97;
 
-  --accent:           #6090d8;
-  --accent-light:     rgba(96,144,216,0.08);
-  --accent-hover-bg:  #1a2840;
-  --accent-active-bg: #162036;
-  --accent-border:    #385888;
+  --accent:           #35c9e0;
+  --accent-light:     rgba(53,201,224,0.08);
+  --accent-hover-bg:  #0e2630;
+  --accent-active-bg: #0c1f28;
+  --accent-border:    #1f6e7e;
+  --accent-glow:      rgba(53,201,224,0.20);
+  --gauge-track:      #21242c;
 
-  --metric-value:     #e8e8f0;
+  /* Decorative panel accents (dark) — kept; only the muted borders de-tinted a
+     touch toward neutral so they don't reintroduce a cast. */
+  --panel-depth-accent:  #6fa3e6;  --panel-depth-border:  #2b4a73;
+  --panel-subsys-accent: #b0a2ee;  --panel-subsys-border: #3a3070;
+  --panel-cmd-accent:    #d8a23f;  --panel-cmd-border:    #6e520f;
+  --panel-dive-accent:   var(--accent);  --panel-dive-border:  var(--accent);
 
-  --status-q-bg:       #241c08; --status-q-text:  #d89840; --status-q-border:  #483408;
-  --status-ok-bg:      #081408; --status-ok-text: #60a860; --status-ok-border: #163c16;
-  --status-err-bg:     #200808; --status-err-text:#c06060; --status-err-border:#481818;
+  --metric-value:     #eef3f7;
 
-  --alive-yes: #60a860;
-  --alive-no:  #c06060;
+  --status-q-bg:       #241c08; --status-q-text:  #d8a23f; --status-q-border:  #48360a;
+  --status-ok-bg:      #08160e; --status-ok-text: #3fcf86; --status-ok-border: #143c28;
+  --status-err-bg:     #1f0a0a; --status-err-text:#e0606a; --status-err-border:#48181c;
 
-  --chart-grid:    #21212e;
-  --chart-text:    #606080;
-  --chart-line:    #6090d8;
-  --chart-sim:     #d09040;
+  --alive-yes: #3fcf86;
+  --alive-no:  #e0606a;
+
+  --chart-grid:    #1c1f27;
+  --chart-text:    #5e6470;
+  --chart-line:    #35c9e0;
+  --chart-sim:     #d8a23f;
+
+  /* Dim radial lift behind the 3D model — SpaceX-console depth. Cool-slate so it
+     reads as a faint glow, not a grey smudge; kept very low-alpha so the corners
+     stay near-black. Layered over --bg on .v-main (see below); the gyro canvas is
+     transparent, so the glow appears to emanate from behind the cage. */
+  --bg-glow: radial-gradient(ellipse 74% 52% at 50% 57%,
+               rgba(48,74,100,0.28) 0%,
+               rgba(26,36,50,0.13) 40%,
+               rgba(10,11,13,0) 74%);
 }
 
 /* ── Vuetify theme variable overrides for dark mode ─────────────────────── */
 html.dark {
-  --v-theme-background:    13,13,18;
-  --v-theme-surface:       22,22,30;
-  --v-theme-on-background: 220,220,232;
-  --v-theme-on-surface:    220,220,232;
+  --v-theme-background:    10,11,13;
+  --v-theme-surface:       16,18,22;
+  --v-theme-on-background: 227,231,236;
+  --v-theme-on-surface:    227,231,236;
 }
 html.dark .v-application {
-  background-color: #0d0d12 !important;
-  color: #dcdce8 !important;
+  background-color: var(--bg) !important;
+  color: var(--text) !important;
 }
-html.dark .v-main,
+/* The dim center glow lives on .v-main (the content area below the app bar), not
+   .v-application, so it sits BEHIND the dashboard's transparent gaps and the
+   transparent gyro canvas and is centred on the model. __wrap stays transparent
+   so it doesn't repaint over the glow. */
+html.dark .v-main {
+  background: var(--bg-glow), var(--bg) !important;
+}
 html.dark .v-main__wrap {
-  background: #0d0d12 !important;
+  background: transparent !important;
 }
 
 /* ── Base reset ──────────────────────────────────────────────────────────── */
@@ -128,6 +168,21 @@ body,
   background: var(--bg) !important;
   color: var(--text) !important;
   transition: background var(--transition), color var(--transition);
+}
+
+/* ── Number inputs: no spinner buttons ───────────────────────────────────── */
+/* Operators type setpoints by hand, so the native up/down increment steppers
+   on every <input type="number"> value box are stripped (WebKit/Blink + Firefox).
+   `step`/`min` are kept for validation; only the visible buttons go. */
+input[type='number']::-webkit-inner-spin-button,
+input[type='number']::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  appearance: none;
+  margin: 0;
+}
+input[type='number'] {
+  -moz-appearance: textfield;
+  appearance: textfield;
 }
 
 /* ── v-main ──────────────────────────────────────────────────────────────── */
@@ -229,6 +284,21 @@ body,
 
 /* ── v-progress-circular ─────────────────────────────────────────────────── */
 .v-progress-circular { color: var(--accent) !important; }
+
+/* ── Locked panel content ────────────────────────────────────────────────── */
+/* Wrap the interactive part of a card in `.lock-target` and toggle `.locked`
+   to gray it out + block interaction (e.g. Debug Commands when manual override
+   is off, the Dive Profile when it's on). Keep the card title and any
+   explanatory hint/banner OUTSIDE the wrapper so they stay readable. */
+.lock-target {
+  transition: opacity var(--transition), filter var(--transition);
+}
+.lock-target.locked {
+  opacity: 0.4;
+  filter: grayscale(0.7);
+  pointer-events: none;
+  user-select: none;
+}
 
 /* ── Scrollbar (dark-friendly) ───────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 5px; height: 5px; }

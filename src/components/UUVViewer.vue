@@ -1,78 +1,136 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, watch, computed } from 'vue'
+import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js'
 import { useTheme } from '@/composables/useTheme'
 
-const props = defineProps<{
-  qw: number
-  qx: number
-  qy: number
-  qz: number
-  depth: number
-}>()
+// Central stage element: the UUV model suspended inside a gyroscope cage --
+// three orthogonal gimbal rings + a faint wireframe shell.
+//
+// Two view modes (viewMode prop):
+//   'freelook' -- the model sits level (identity) and drag orbits the camera
+//                 freely, exactly as the stage behaved before. Inspect the cage
+//                 from any angle; nothing tracks telemetry.
+//   'locked'   -- the model is tilted to the estimator's inferred roll/pitch
+//                 (qw/qx/qy/qz, the /position/estimation quaternion, yaw=0).
+//                 Drag is constrained to azimuth so the operator can still spin
+//                 the *view* in yaw -- which the glider can't observe -- while
+//                 roll and pitch stay pinned to the estimate.
+const props = withDefaults(
+  defineProps<{
+    viewMode?: 'freelook' | 'locked'
+    // Estimator attitude quaternion (NED body frame, x/y/z/w). Applied to the
+    // model only in 'locked' mode; ignored (model stays level) in 'freelook'.
+    qw?: number
+    qx?: number
+    qy?: number
+    qz?: number
+    // Live translational acceleration in the IMU's NED body frame (m/s^2):
+    // ax forward, ay right, az down. Drawn as a vector arrow from the cage centre,
+    // length scaled by magnitude and clamped to the sphere. Defaults to zero
+    // (no arrow) so the viewer still works without an IMU feed.
+    ax?: number
+    ay?: number
+    az?: number
+  }>(),
+  { viewMode: 'freelook', qw: 1, qx: 0, qy: 0, qz: 0, ax: 0, ay: 0, az: 0 },
+)
+
+// The scene is Y-up (x fwd, y up, z right); the estimator quaternion and the
+// accel vector are both in the NED body frame (x fwd, y right, z down). The
+// basis change between them is a single +90 deg rotation about scene X --
+// Q_NED_TO_SCENE, the one definition of the frame change (NED y-right -> scene
+// z-right, NED z-down -> scene -y). A NED *vector* maps straight through it; a
+// NED *attitude* is re-expressed by conjugation, q_scene = Qc * q_ned * Qc^-1,
+// where Q_SCENE_TO_NED is the (constant) inverse. Shared by the model and the
+// arrow so both ride the same tilt.
+const Q_NED_TO_SCENE = new THREE.Quaternion().setFromAxisAngle(
+  new THREE.Vector3(1, 0, 0),
+  Math.PI / 2,
+)
+const Q_SCENE_TO_NED = Q_NED_TO_SCENE.clone().invert()
 
 const { isDark } = useTheme()
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 
 // ── Three.js state (not reactive) ──────────────────────────────────────
-let renderer:    THREE.WebGLRenderer
-let scene:       THREE.Scene
-let camera:      THREE.PerspectiveCamera
-let controls:    OrbitControls
-let uuvMesh:     THREE.Object3D
-let gridHelper:  THREE.GridHelper
-let ambLight:    THREE.AmbientLight
-let dirLight1:   THREE.DirectionalLight
-let dirLight2:   THREE.DirectionalLight
-let animId:      number
-let ro:          ResizeObserver
+let renderer:  THREE.WebGLRenderer
+let scene:     THREE.Scene
+let camera:    THREE.PerspectiveCamera
+let controls:  OrbitControls
+let uuvMesh:   THREE.Object3D
+let gyroGroup: THREE.Group
+let gyroRadius = 0   // bounding-sphere radius of the cage; drives camera framing
+let ambLight:  THREE.AmbientLight
+let dirLight1: THREE.DirectionalLight
+let dirLight2: THREE.DirectionalLight
+let animId:    number
+let ro:        ResizeObserver
 
-// Camera distance config
-const DEFAULT_DIST = 7.0
-const MIN_DIST     = DEFAULT_DIST / 2   // 2× closer
-const MAX_DIST     = DEFAULT_DIST * 2   // 2× farther
-const ZOOM_STEP    = 1.2
+// ── Acceleration arrow (translational accel vector) ───────────────────────
+let accelArrow:  THREE.Group            // root, rotated to point along the vector
+let accelShaft:  THREE.Mesh             // unit cylinder, scaled in Y to set length
+let accelHead:   THREE.Mesh             // cone tip, constant size
+let accelMat:    THREE.MeshStandardMaterial
+let arrowHeadLen = 0                     // world height of the cone at full size
+// Smoothed render state so the 10 Hz feed glides instead of stepping.
+const ARROW_UP = new THREE.Vector3(0, 1, 0)   // arrow's local axis before rotation
+const arrowDir = new THREE.Vector3(0, 1, 0)   // current (smoothed) target direction
+const arrowQuat = new THREE.Quaternion()      // current (smoothed) orientation
+let arrowLen = 0                              // current (smoothed) length
 
-// ── Euler angles from quaternion ────────────────────────────────────────
-const rollDeg = computed(() => {
-  const { qw, qx, qy, qz } = props
-  const sinr = 2 * (qw * qx + qy * qz)
-  const cosr = 1 - 2 * (qx * qx + qy * qy)
-  return (Math.atan2(sinr, cosr) * 180 / Math.PI).toFixed(1)
-})
-const pitchDeg = computed(() => {
-  const { qw, qx, qy, qz } = props
-  const sinp = 2 * (qw * qy - qz * qx)
-  const clamped = Math.abs(sinp) >= 1 ? Math.sign(sinp) * Math.PI / 2 : Math.asin(sinp)
-  return (clamped * 180 / Math.PI).toFixed(1)
-})
-const yawDeg = computed(() => {
-  const { qw, qx, qy, qz } = props
-  const siny = 2 * (qw * qz + qx * qy)
-  const cosy = 1 - 2 * (qy * qy + qz * qz)
-  return (Math.atan2(siny, cosy) * 180 / Math.PI).toFixed(1)
-})
+// The camera distance is NOT fixed -- it's recomputed per canvas aspect in
+// frameGyro() so the whole gyro sphere stays framed even when the stage canvas
+// turns portrait on a narrow window (a fixed distance clipped the sphere
+// left/right). DEFAULT_DIST only seeds the initial view *direction*; its
+// magnitude is overwritten on the first resize. FIT_MARGIN > 1 leaves a clear
+// gap between the sphere and the canvas edges. BOTTOM_MARGIN_FRAC is how far
+// (in sphere radii) the cage floats off the lower edge once frameGyro pushes it
+// down to hug the init bar on a portrait canvas.
+const DEFAULT_DIST       = 14
+const FIT_MARGIN         = 1.08
+const BOTTOM_MARGIN_FRAC = 0.16
+
+// Acceleration arrow tuning. ACCEL_REF_MPS2 is the magnitude that maps to a
+// (near) full-radius arrow: ~2 g, so gravity alone (1 g, at rest) draws a clean
+// half-radius vector pointing up and maneuvers push it out toward the shell.
+// ARROW_FILL keeps the tip just inside the sphere; ARROW_SMOOTH is the per-frame
+// lerp toward the latest sample.
+const ACCEL_REF_MPS2 = 2 * 9.806
+const ARROW_FILL     = 0.9
+const ARROW_SMOOTH   = 0.18
+const ARROW_MIN_MPS2 = 0.05   // below this the arrow hides (no meaningful direction)
 
 // ── Color helpers ────────────────────────────────────────────────────────
 const C = {
-  bg:       () => isDark.value ? 0x0f0f16 : 0xf0f0f4,
-  grid:     () => isDark.value ? 0x282840 : 0xccccde,
-  ambient:  () => isDark.value ? 0x303050 : 0x909099,
-  dirLight: () => isDark.value ? 0xaab8d0 : 0xffffff,
+  // No scene background: the renderer is alpha:true and the scene clears
+  // transparent, so the canvas shows the page straight through. That lets the
+  // dark theme's dim center glow (--bg-glow on .v-main) read as emanating from
+  // BEHIND the cage, and keeps the canvas blended into the stage in both themes
+  // without having to track --bg by hand.
+  ambient:  () => isDark.value ? 0x303640 : 0x909099,
+  dirLight: () => isDark.value ? 0xbfd0e0 : 0xffffff,
+  // Gimbal-ring color. Cyan glows on the near-black dark background, but that
+  // same cyan all but vanished on the light gray stage -- so the light theme
+  // gets a deep teal that actually reads against #eaeaec.
+  ring:     () => isDark.value ? 0x35c9e0 : 0x0e7c8b,
+  // Acceleration arrow -- the purple of the TRANS ACC panel title, so the dials
+  // and the vector read as the same instrument.
+  accel:    () => isDark.value ? 0xb0a2ee : 0x7a55c8,
 }
 
 async function buildScene() {
   scene = new THREE.Scene()
-  scene.background = new THREE.Color(C.bg())
+  // Transparent — the page (and its center glow) shows through. See C above.
+  scene.background = null
 
   // Camera
   camera = new THREE.PerspectiveCamera(38, 1, 0.1, 200)
   camera.position.set(
     DEFAULT_DIST * 0.56,
-    DEFAULT_DIST * 0.35,
-    DEFAULT_DIST * 0.56
+    DEFAULT_DIST * 0.34,
+    DEFAULT_DIST * 0.56,
   )
   camera.lookAt(0, 0, 0)
 
@@ -89,14 +147,18 @@ async function buildScene() {
   // UUV model
   const loader = new STLLoader()
   const geometry = await loader.loadAsync('/models/uuv.stl').catch((err) => { console.error('Failed to load uuv.stl:', err); throw err })
-  // STL ships with length axis vertical — lay it flat so nose points along +X
+  // STL ships with length axis vertical — lay it flat so the nose points along
+  // +X with the dorsal side (rudder) facing +Y (scene up). The -pi/2 roll about
+  // X is the right-side-up rest pose; the NED z-down convention is carried by the
+  // Q_NED_TO_SCENE conjugation in updateSceneAttitude, NOT by this rest pose, so
+  // baking it in here too would double-correct and render the model belly-up.
   geometry.rotateZ(-Math.PI / 2)
   geometry.rotateX(-Math.PI / 2)
   geometry.computeVertexNormals()
   const material = new THREE.MeshStandardMaterial({
-    color: 0xb8c4d4,
-    metalness: 0.25,
-    roughness: 0.55,
+    color: 0xc2d0de,
+    metalness: 0.3,
+    roughness: 0.5,
     flatShading: true,
   })
   uuvMesh = new THREE.Mesh(geometry, material)
@@ -109,17 +171,71 @@ async function buildScene() {
   const scale = 5.0 / maxDim
   uuvMesh.scale.setScalar(scale)
   uuvMesh.position.sub(center.multiplyScalar(scale))
-
   scene.add(uuvMesh)
 
-  // Reference grid (horizontal)
-  gridHelper = new THREE.GridHelper(10, 20, C.grid(), C.grid())
-  gridHelper.position.y = -2.2
-  scene.add(gridHelper)
+  // Gyroscope cage sized to the scaled model's bounding sphere
+  const bs = new THREE.Box3().setFromObject(uuvMesh).getBoundingSphere(new THREE.Sphere())
+  buildGyro(bs.radius * 1.12)
+  buildAccelArrow()
+}
 
-  // Small axes indicator
-  const axes = new THREE.AxesHelper(1.4)
-  scene.add(axes)
+// A slim vector arrow rooted at the cage centre: a thin cylinder shaft capped by
+// a cone. Built once at unit proportions (shaft is a 1-unit cylinder we scale in
+// Y; cone is a fixed size), then each frame updateAccelArrow() rotates the whole
+// group to the vector direction and sets the shaft length.
+function buildAccelArrow() {
+  arrowHeadLen = gyroRadius * 0.14
+  const shaftR = gyroRadius * 0.014
+  const headR  = gyroRadius * 0.045
+  accelMat = new THREE.MeshStandardMaterial({
+    color: C.accel(),
+    metalness: 0.15,
+    roughness: 0.45,
+    transparent: true,
+    opacity: 0.96,
+  })
+
+  accelArrow = new THREE.Group()
+  // Cylinder is centred on its own origin (spans y=-0.5..0.5 at unit height); we
+  // scale + lift it in updateAccelArrow so its base stays at the cage centre.
+  accelShaft = new THREE.Mesh(new THREE.CylinderGeometry(shaftR, shaftR, 1, 16), accelMat)
+  accelHead = new THREE.Mesh(new THREE.ConeGeometry(headR, arrowHeadLen, 20), accelMat)
+  accelArrow.add(accelShaft)
+  accelArrow.add(accelHead)
+  accelArrow.visible = false
+  scene.add(accelArrow)
+}
+
+// Three orthogonal gimbal rings (nested radii) + a faint wireframe shell.
+function buildGyro(radius: number) {
+  gyroRadius = radius   // shell + outermost ring both sit at this radius
+  gyroGroup = new THREE.Group()
+
+  // Faint wireframe shell
+  const shell = new THREE.Mesh(
+    new THREE.SphereGeometry(radius, 30, 18),
+    new THREE.MeshBasicMaterial({ color: C.ring(), wireframe: true, transparent: true, opacity: 0.05 }),
+  )
+  gyroGroup.add(shell)
+
+  // Gimbal rings: each a great circle about a different axis
+  const radii = [radius, radius * 0.93, radius * 0.86]
+  const rots: [number, number, number][] = [
+    [0, 0, 0],            // around Z
+    [Math.PI / 2, 0, 0],  // around Y
+    [0, Math.PI / 2, 0],  // around X
+  ]
+  const opac = [0.6, 0.42, 0.52]
+  radii.forEach((rr, i) => {
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(rr, Math.max(0.012, rr * 0.006), 10, 160),
+      new THREE.MeshBasicMaterial({ color: C.ring(), transparent: true, opacity: opac[i] }),
+    )
+    ring.rotation.set(rots[i][0], rots[i][1], rots[i][2])
+    gyroGroup.add(ring)
+  })
+
+  scene.add(gyroGroup)
 }
 
 function buildControls() {
@@ -128,33 +244,135 @@ function buildControls() {
   controls.enableDamping   = true
   controls.dampingFactor   = 0.08
   controls.enablePan       = false
-  controls.enableZoom      = false   // handled by buttons
-  controls.minDistance     = MIN_DIST
-  controls.maxDistance     = MAX_DIST
+  controls.enableZoom      = false   // distance is driven by fitCameraDistance()
+  // Permissive clamp so OrbitControls.update() never overrides the fit distance
+  // (it re-derives the orbit radius from camera.position each frame).
+  controls.minDistance     = 1
+  controls.maxDistance     = 1000
   controls.rotateSpeed     = 0.55
   controls.update()
 }
 
-function applyQuaternion() {
-  if (!uuvMesh) return
+// The model's orientation in scene coords, cached so it's recomputed only when
+// the attitude or view mode changes (see watches) -- not per frame. In 'locked'
+// mode this is the estimator's NED attitude conjugated into the scene frame; in
+// 'freelook' (or with a degenerate quaternion) it's identity, so the model
+// stays level. The accel arrow reads the same cache so it rides the tilt.
+const sceneQuat = new THREE.Quaternion()
+
+function updateSceneAttitude() {
   const q = new THREE.Quaternion(props.qx, props.qy, props.qz, props.qw)
-  if (q.lengthSq() < 0.001) q.set(0, 0, 0, 1)
-  else q.normalize()
-  uuvMesh.setRotationFromQuaternion(q)
+  if (props.viewMode !== 'locked' || q.lengthSq() < 0.001) sceneQuat.identity()
+  else sceneQuat.copy(Q_NED_TO_SCENE).multiply(q.normalize()).multiply(Q_SCENE_TO_NED)
+  if (uuvMesh) uuvMesh.setRotationFromQuaternion(sceneQuat)
+}
+
+// Constrain orbit by view mode: free in 'freelook'; azimuth-only in 'locked'
+// (lock the polar angle to the current elevation so drag spins the view in yaw
+// but can't change pitch/roll of the camera).
+function applyViewMode() {
+  if (!controls) return
+  if (props.viewMode === 'locked') {
+    const polar = controls.getPolarAngle()
+    controls.minPolarAngle = polar
+    controls.maxPolarAngle = polar
+  } else {
+    controls.minPolarAngle = 0
+    controls.maxPolarAngle = Math.PI
+  }
+  controls.update()
+}
+
+// Drive the acceleration arrow from the live NED body vector. Maps the body
+// frame (x fwd, y right, z down) into the scene's axes (x fwd, y up, z right),
+// rides the model's attitude quaternion so it tracks the cage when wired live,
+// scales length by magnitude (clamped to the sphere), and lerps both direction
+// and length toward the latest sample so the 10 Hz stream glides.
+function updateAccelArrow() {
+  if (!accelArrow || !gyroRadius) return
+  const mag = Math.hypot(props.ax, props.ay, props.az)
+  const fullLen = gyroRadius * ARROW_FILL
+  const targetLen =
+    mag <= ARROW_MIN_MPS2 ? 0 : Math.min((mag / ACCEL_REF_MPS2) * fullLen, fullLen)
+
+  if (mag > ARROW_MIN_MPS2) {
+    // NED body -> scene basis (Q_NED_TO_SCENE), then the model's cached attitude
+    // so the arrow rides the tilt (identity in freelook, the estimate in locked).
+    arrowDir.set(props.ax, props.ay, props.az).normalize()
+    arrowDir.applyQuaternion(Q_NED_TO_SCENE).applyQuaternion(sceneQuat)
+    arrowQuat.slerp(new THREE.Quaternion().setFromUnitVectors(ARROW_UP, arrowDir), ARROW_SMOOTH)
+  }
+
+  arrowLen += (targetLen - arrowLen) * ARROW_SMOOTH
+  accelArrow.visible = arrowLen > 0.02
+  if (!accelArrow.visible) return
+
+  accelArrow.quaternion.copy(arrowQuat)
+  // Keep the cone a constant size until the arrow gets shorter than the head,
+  // then let the head shrink with it so a tiny vector still looks like an arrow.
+  const headLen = Math.min(arrowHeadLen, arrowLen)
+  const shaftLen = Math.max(1e-4, arrowLen - headLen)
+  accelShaft.scale.y = shaftLen
+  accelShaft.position.y = shaftLen / 2
+  accelHead.scale.y = headLen / arrowHeadLen
+  accelHead.position.y = shaftLen + headLen / 2
 }
 
 function updateColors() {
   if (!scene) return
-  scene.background = new THREE.Color(C.bg())
-  // GridHelper has no setColors() — recreate it
-  scene.remove(gridHelper)
-  gridHelper = new THREE.GridHelper(10, 20, C.grid(), C.grid())
-  gridHelper.position.y = -2.2
-  scene.add(gridHelper)
-  // Update lights
   ambLight.color.set(C.ambient())
   dirLight1.color.set(C.dirLight())
   dirLight2.color.set(C.dirLight())
+  // Recolor the gimbal cage (shell + rings) so the theme toggle swaps the
+  // light-theme teal and dark-theme cyan live, not just on first build.
+  if (gyroGroup) {
+    const c = C.ring()
+    gyroGroup.traverse((o) => {
+      const m = (o as THREE.Mesh).material as THREE.MeshBasicMaterial | undefined
+      if (m && 'color' in m) m.color.set(c)
+    })
+  }
+  if (accelMat) accelMat.color.set(C.accel())
+}
+
+// Frame the gyro's bounding sphere to (nearly) fill the canvas within BOTH the
+// vertical and horizontal FOV -- for a portrait canvas the horizontal FOV is the
+// tighter one, so it binds; for landscape, the vertical does. Then push the cage
+// DOWN into whatever vertical slack remains so it sits low, hugging the init bar,
+// instead of floating at the canvas mid-height. On a portrait canvas the sphere
+// is width-fit, leaving tall vertical room that this pan consumes; on a near-
+// square / landscape canvas it already fills the height, so there's no slack and
+// no pan. The pan moves the camera AND the orbit target together, so it's a pure
+// vertical lens-shift -- the fit is undisturbed and dragging still orbits.
+function frameGyro() {
+  if (!gyroRadius || !camera || !controls) return
+  const vFov = (camera.fov * Math.PI) / 180
+  const hFov = 2 * Math.atan(Math.tan(vFov / 2) * camera.aspect)
+  const dist = (gyroRadius / Math.sin(Math.min(vFov, hFov) / 2)) * FIT_MARGIN
+
+  // Preserve the current orbit direction (so a user drag survives a resize);
+  // fall back to the seeded oblique view on the very first frame.
+  const dir = camera.position.clone().sub(controls.target)
+  if (dir.lengthSq() < 1e-6) dir.set(0.56, 0.34, 0.56)
+  dir.normalize()
+  camera.position.copy(dir).multiplyScalar(dist)
+  controls.target.set(0, 0, 0)
+  camera.lookAt(0, 0, 0)
+  camera.updateMatrixWorld()
+
+  // Vertical room above+below the sphere at its own plane; spend it pushing the
+  // cage down to BOTTOM_MARGIN_FRAC of a radius off the lower edge.
+  const halfH = dist * Math.tan(vFov / 2)
+  const panUp = halfH - gyroRadius * (1 + BOTTOM_MARGIN_FRAC)
+  if (panUp > 0) {
+    // Camera's screen-up axis (2nd column of its world matrix). Panning the view
+    // UP slides the scene content DOWN, dropping the cage toward the lower edge.
+    const up = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1).normalize()
+    camera.position.addScaledVector(up, panUp)
+    controls.target.addScaledVector(up, panUp)
+    camera.lookAt(controls.target)
+  }
+  camera.updateProjectionMatrix()
 }
 
 function resize() {
@@ -166,32 +384,24 @@ function resize() {
   renderer.setSize(w, h, false)
   camera.aspect = w / h
   camera.updateProjectionMatrix()
+  frameGyro()
 }
-
-function zoomBy(delta: number) {
-  const dir  = camera.position.clone().sub(controls.target).normalize()
-  const dist = camera.position.distanceTo(controls.target)
-  const next = Math.min(MAX_DIST, Math.max(MIN_DIST, dist + delta))
-  camera.position.copy(controls.target).addScaledVector(dir, next)
-  controls.update()
-}
-
-function zoomIn()  { zoomBy(-ZOOM_STEP) }
-function zoomOut() { zoomBy(+ZOOM_STEP) }
 
 function animate() {
   animId = requestAnimationFrame(animate)
   controls.update()          // needed for damping
-  applyQuaternion()
+  updateAccelArrow()         // reads the cached sceneQuat; attitude is set on change
   renderer.render(scene, camera)
 }
 
 onMounted(async () => {
   if (!canvasRef.value) return
-  renderer = new THREE.WebGLRenderer({ canvas: canvasRef.value, antialias: true })
+  renderer = new THREE.WebGLRenderer({ canvas: canvasRef.value, antialias: true, alpha: true })
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
   await buildScene()
   buildControls()
+  updateSceneAttitude()      // seed the model attitude from the initial props
+  applyViewMode()
   resize()
   animate()
   ro = new ResizeObserver(resize)
@@ -206,33 +416,13 @@ onBeforeUnmount(() => {
 })
 
 watch(isDark, updateColors)
-watch(() => [props.qw, props.qx, props.qy, props.qz], applyQuaternion)
+watch(() => [props.qw, props.qx, props.qy, props.qz, props.viewMode], updateSceneAttitude)
+watch(() => props.viewMode, applyViewMode)
 </script>
 
 <template>
   <div class="uuv-wrap">
     <canvas ref="canvasRef" class="uuv-canvas" />
-
-    <!-- Zoom controls -->
-    <div class="zoom-btns">
-      <button class="zoom-btn" @click="zoomIn"  title="Zoom in">
-        <v-icon size="13">mdi-plus</v-icon>
-      </button>
-      <button class="zoom-btn" @click="zoomOut" title="Zoom out">
-        <v-icon size="13">mdi-minus</v-icon>
-      </button>
-    </div>
-
-    <!-- HUD overlay -->
-    <div class="hud">
-      <div class="hud-row"><span class="hk">Roll </span><span class="hv">{{ rollDeg }}°</span></div>
-      <div class="hud-row"><span class="hk">Pitch</span><span class="hv">{{ pitchDeg }}°</span></div>
-      <div class="hud-row"><span class="hk">Yaw  </span><span class="hv">{{ yawDeg }}°</span></div>
-      <div class="hud-row"><span class="hk">Depth</span><span class="hv">{{ depth.toFixed(1) }} m</span></div>
-    </div>
-
-    <!-- Drag hint (fades after first interaction) -->
-    <div class="drag-hint">drag to orbit</div>
   </div>
 </template>
 
@@ -253,76 +443,4 @@ watch(() => [props.qw, props.qx, props.qy, props.qz], applyQuaternion)
   cursor: grab;
 }
 .uuv-canvas:active { cursor: grabbing; }
-
-/* ── Zoom buttons ──────────────────────────────────────────────────────── */
-.zoom-btns {
-  position: absolute;
-  bottom: 14px;
-  right: 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.zoom-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: 1px solid var(--border-btn);
-  border-radius: var(--radius-xs);
-  cursor: pointer;
-  background: var(--bg-btn);
-  color: var(--text-muted);
-  opacity: 0.85;
-  transition: background var(--transition), opacity var(--transition), color var(--transition);
-  backdrop-filter: blur(4px);
-}
-.zoom-btn:hover {
-  opacity: 1;
-  background: var(--accent-hover-bg);
-  border-color: var(--accent-border);
-  color: var(--accent);
-}
-
-/* ── HUD ───────────────────────────────────────────────────────────────── */
-.hud {
-  position: absolute;
-  top: 12px;
-  left: 13px;
-  pointer-events: none;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-.hud-row { display: flex; align-items: baseline; gap: 5px; }
-.hk {
-  font-family: var(--font-mono);
-  font-size: 9px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text-hint);
-  width: 32px;
-  flex-shrink: 0;
-}
-.hv {
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  color: var(--text-muted);
-}
-
-/* ── Drag hint ─────────────────────────────────────────────────────────── */
-.drag-hint {
-  position: absolute;
-  bottom: 14px;
-  left: 50%;
-  transform: translateX(-50%);
-  font-family: var(--font-ui);
-  font-size: 9.5px;
-  color: var(--text-hint);
-  letter-spacing: 0.06em;
-  pointer-events: none;
-  opacity: 0.7;
-}
 </style>
