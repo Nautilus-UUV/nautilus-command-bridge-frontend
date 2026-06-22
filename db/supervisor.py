@@ -18,10 +18,17 @@ the dive:
 The writer runs in its own session (start_new_session) so a Ctrl-C in the
 supervisor's terminal doesn't reach it directly -- only the supervisor decides
 how the writer dies, which is what keeps the two cases above distinct.
+
+Cloud mirror (opt-in, --cloud): the supervisor also keeps an uploader.py child
+alive -- but unlike the writer it runs the *whole* session, independent of the
+dive's desired state, so it mirrors the rolling parquet to Google Drive during
+the dive and still catches the writer's final-minute files after Terminate. See
+uploader.py / cloud_auth.py.
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import signal
@@ -37,13 +44,45 @@ RESPAWN_BACKOFF_S = 1.0
 TERMINATE_GRACE_S = 10.0
 
 
+class _Child:
+    """A respawnable subprocess in its own session. Knows how to (re)spawn with
+    backoff and report liveness; the *stop* policy lives in the supervisor,
+    because the writer and the uploader stop differently."""
+
+    def __init__(self, name: str, path) -> None:
+        self.name = name
+        self.path = path
+        self.proc: subprocess.Popen | None = None
+        self.last_spawn = 0.0
+
+    def alive(self) -> bool:
+        return self.proc is not None and self.proc.poll() is None
+
+    def due_for_respawn(self, backoff: float) -> bool:
+        return not self.alive() and (time.monotonic() - self.last_spawn >= backoff)
+
+    def spawn(self, env_extra: dict | None = None) -> None:
+        self.last_spawn = time.monotonic()
+        env = {**os.environ, **(env_extra or {})}
+        # Own session: terminal signals (Ctrl-C) hit only the supervisor.
+        self.proc = subprocess.Popen(
+            [sys.executable, str(self.path)],
+            cwd=str(config.HERE),
+            start_new_session=True,
+            env=env,
+        )
+        print(f"[supervisor] spawned {self.name} pid={self.proc.pid}", flush=True)
+
+
 class Supervisor:
-    def __init__(self) -> None:
+    def __init__(self, cloud_env: dict | None = None) -> None:
         self._lock = threading.Lock()
         self._desired = "stopped"        # set by control messages
         self._dive_name = ""             # operator-given name, rides the start cmd
-        self._proc: subprocess.Popen | None = None
-        self._last_spawn = 0.0
+        self._writer = _Child("writer", config.WRITER_PATH)
+        # cloud off -> no uploader; cloud on -> uploader gets this static env.
+        self._cloud_env = cloud_env
+        self._uploader = _Child("uploader", config.UPLOADER_PATH) if cloud_env else None
         self._running = True
 
         self._client = mqtt_source.make_client(
@@ -79,24 +118,7 @@ class Supervisor:
                 self._desired = "stopped"
             print("[supervisor] desired = stopped", flush=True)
 
-    # --- writer lifecycle ---------------------------------------------------
-
-    def _alive(self) -> bool:
-        return self._proc is not None and self._proc.poll() is None
-
-    def _spawn(self) -> None:
-        self._last_spawn = time.monotonic()
-        with self._lock:
-            name = self._dive_name
-        env = {**os.environ, config.DIVE_NAME_ENV: name}
-        # Own session: terminal signals (Ctrl-C) hit only the supervisor.
-        self._proc = subprocess.Popen(
-            [sys.executable, str(config.WRITER_PATH)],
-            cwd=str(config.HERE),
-            start_new_session=True,
-            env=env,
-        )
-        print(f"[supervisor] spawned writer pid={self._proc.pid}", flush=True)
+    # --- writer / uploader lifecycle ----------------------------------------
 
     def _stop_writer(self, graceful: bool) -> None:
         """Stop the writer, with deliberately different effects on the dive.
@@ -106,24 +128,41 @@ class Supervisor:
         non-graceful (supervisor itself going down): SIGKILL straight away so the
         dive stays OPEN (ended_at NULL) for the next run to resume.
         """
-        if not self._alive():
-            self._proc = None
+        w = self._writer
+        if not w.alive():
+            w.proc = None
             return
         if graceful:
-            print(f"[supervisor] terminating writer pid={self._proc.pid} (closing dive)",
+            print(f"[supervisor] terminating writer pid={w.proc.pid} (closing dive)",
                   flush=True)
-            self._proc.terminate()  # SIGTERM -> writer sets ended_at, exits
+            w.proc.terminate()  # SIGTERM -> writer sets ended_at, exits
         else:
-            print(f"[supervisor] killing writer pid={self._proc.pid} (dive stays open)",
+            print(f"[supervisor] killing writer pid={w.proc.pid} (dive stays open)",
                   flush=True)
-            self._proc.kill()
+            w.proc.kill()
         try:
-            self._proc.wait(timeout=TERMINATE_GRACE_S)
+            w.proc.wait(timeout=TERMINATE_GRACE_S)
         except subprocess.TimeoutExpired:
             if graceful:  # escalate a stuck graceful stop to a hard kill
                 print("[supervisor] writer didn't exit, killing", flush=True)
-                self._proc.kill()
-        self._proc = None
+                w.proc.kill()
+        w.proc = None
+
+    def _stop_uploader(self) -> None:
+        """Kill the uploader -- it has no dive state to preserve. Any not-yet-
+        mirrored parquet stays on disk and is caught on the next launch."""
+        u = self._uploader
+        if u is None or not u.alive():
+            if u is not None:
+                u.proc = None
+            return
+        print(f"[supervisor] killing uploader pid={u.proc.pid}", flush=True)
+        u.proc.kill()
+        try:
+            u.proc.wait(timeout=TERMINATE_GRACE_S)
+        except subprocess.TimeoutExpired:
+            pass
+        u.proc = None
 
     # --- reconcile loop -----------------------------------------------------
 
@@ -135,20 +174,28 @@ class Supervisor:
         while self._running:
             with self._lock:
                 desired = self._desired
+            # The writer follows the operator's desired state.
             if desired == "running":
-                if not self._alive() and (
-                    time.monotonic() - self._last_spawn >= RESPAWN_BACKOFF_S
-                ):
-                    self._spawn()
+                if self._writer.due_for_respawn(RESPAWN_BACKOFF_S):
+                    with self._lock:
+                        name = self._dive_name
+                    self._writer.spawn({config.DIVE_NAME_ENV: name})
             else:  # stopped -- an operator Terminate
-                if self._alive():
+                if self._writer.alive():
                     self._stop_writer(graceful=True)
+            # The uploader (if cloud is on) runs the whole session, regardless of
+            # desired, so it keeps mirroring after a Terminate's final flush.
+            if self._uploader is not None and self._uploader.due_for_respawn(
+                RESPAWN_BACKOFF_S
+            ):
+                self._uploader.spawn(self._cloud_env)
             time.sleep(0.5)
 
         # Going down ourselves (not an operator Terminate): drop the writer but
         # leave its dive open so the next run.sh resumes it. We must not orphan
         # it -- a second writer would collide on DuckDB's single-writer lock.
         self._stop_writer(graceful=False)
+        self._stop_uploader()
         self._client.loop_stop()
         print("[supervisor] stopped", flush=True)
 
@@ -156,5 +203,46 @@ class Supervisor:
         self._running = False
 
 
+def _parse_args(argv):
+    p = argparse.ArgumentParser(description="Simpyl Database supervisor")
+    p.add_argument("--cloud", action="store_true",
+                   help="mirror the rolling parquet to Google Drive (opt-in)")
+    p.add_argument("--cloud-login", action="store_true",
+                   help="one-time: mint the Drive OAuth user token, then exit")
+    p.add_argument("--gdrive-token", default=str(config.GDRIVE_TOKEN_PATH),
+                   help="path to the OAuth user token json")
+    p.add_argument("--gdrive-folder", default="",
+                   help="destination Drive folder id (required with --cloud)")
+    p.add_argument("--gdrive-client-secret", default="",
+                   help="OAuth client secret json (required with --cloud-login)")
+    return p.parse_args(argv)
+
+
 if __name__ == "__main__":
-    Supervisor().run()
+    args = _parse_args(sys.argv[1:])
+
+    if args.cloud_login:
+        # One-shot interactive consent: never enters the reconcile loop.
+        if not args.gdrive_client_secret:
+            sys.exit("[supervisor] --cloud-login needs --gdrive-client-secret "
+                     "<client_secret.json>")
+        import cloud_auth  # lazy: only the cloud paths need google's libs
+        config.ensure_dirs()
+        token = cloud_auth.login(
+            args.gdrive_client_secret, args.gdrive_token, config.GDRIVE_SCOPES
+        )
+        print(f"[supervisor] Drive token written to {token}", flush=True)
+        sys.exit(0)
+
+    cloud_env = None
+    if args.cloud:
+        if not args.gdrive_folder:
+            sys.exit("[supervisor] --cloud needs --gdrive-folder <id>")
+        cloud_env = {
+            config.CLOUD_TOKEN_ENV: args.gdrive_token,
+            config.CLOUD_FOLDER_ENV: args.gdrive_folder,
+        }
+        print("[supervisor] cloud mirror ON -> drive folder "
+              f"{args.gdrive_folder}", flush=True)
+
+    Supervisor(cloud_env).run()

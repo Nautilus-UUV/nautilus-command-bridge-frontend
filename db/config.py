@@ -28,6 +28,7 @@ DATA_DIR = HERE / "data"
 DUCKDB_PATH = DATA_DIR / "nautilus.duckdb"
 PARQUET_DIR = DATA_DIR / "parquet"
 WRITER_PATH = HERE / "writer.py"
+UPLOADER_PATH = HERE / "uploader.py"
 
 
 def ensure_dirs() -> None:
@@ -66,6 +67,35 @@ STATUS_PERIOD_S = 1.0  # liveness heartbeat publish
 # it and opens a fresh dive instead of resuming it. A crash-respawn happens
 # within seconds, so a recent open dive is always resumed -- which is the point.
 STALE_DIVE_S = 600.0
+
+# --- cloud mirror (optional) ------------------------------------------------
+# Opt-in: when run.sh is given --cloud, the supervisor also keeps uploader.py
+# alive (see uploader.py / cloud_auth.py). It mirrors the rolling parquet to a
+# Google Drive folder; it never touches the locked .duckdb. Auth is an OAuth
+# *user* token minted once via --cloud-login, refreshed headless thereafter.
+
+# Least privilege: drive.file only sees files this app created, not the user's
+# whole Drive.
+GDRIVE_SCOPES = ["https://www.googleapis.com/auth/drive.file"]
+
+# Where the operator-given cloud config reaches the uploader child. The
+# supervisor sets these when it spawns uploader.py, mirroring how DIVE_NAME_ENV
+# hands the dive name down to the writer.
+CLOUD_TOKEN_ENV = "NAUTILUS_DB_GDRIVE_TOKEN"    # path to the OAuth user token json
+CLOUD_FOLDER_ENV = "NAUTILUS_DB_GDRIVE_FOLDER"  # destination Drive folder id
+
+# Default token location (inside the gitignored data/ dir). Overridable with
+# --gdrive-token for operators who keep creds outside the repo.
+GDRIVE_TOKEN_PATH = DATA_DIR / "gdrive_token.json"
+# The uploader's record of what's already on Drive: filename -> {size, mtime,
+# drive_id}. Lives beside the parquet it tracks; survives an uploader restart so
+# a respawn catches up without re-uploading.
+UPLOAD_STATE_PATH = PARQUET_DIR / ".upload_state.json"
+
+UPLOAD_SCAN_PERIOD_S = 5.0  # how often the uploader rescans data/parquet/
+# A file modified within this window is still "settling" -- skip it so we never
+# grab a parquet mid-COPY. Matters most for dives.parquet, rewritten each minute.
+UPLOAD_SETTLE_S = 5.0
 
 # --- source classification --------------------------------------------------
 SOURCE_AUTOMATIC = "automatic"  # dive-profile / mission control
@@ -114,3 +144,30 @@ def classify_command(topic: str, payload: dict) -> tuple[str, str] | None:
 def channel_of(topic: str) -> str:
     """Channel prefix for a telemetry topic: the topic minus the `nautilus/`."""
     return topic[len(_NAUTILUS_PREFIX) :]
+
+
+# --- cloud upload planning (pure) -------------------------------------------
+
+
+def plan_uploads(files, state, now, settle_s=UPLOAD_SETTLE_S):
+    """Decide which parquet files the uploader should (re)upload right now.
+
+    Pure so it's testable without touching Drive or the filesystem.
+
+    `files` is [(name, size, mtime)] for everything in the parquet dir, `state`
+    is the persisted {name: {"size", "mtime", ...}} record of what's already on
+    Drive, `now` is the current epoch time. A file is planned when it's new
+    (never uploaded) or its size/mtime changed since last upload -- the latter is
+    how dives.parquet, rewritten in place each minute, gets refreshed. Write-once
+    minute files never change, so they're planned exactly once. A file touched
+    within `settle_s` is skipped until it stops changing, so we don't race a
+    half-written COPY.
+    """
+    planned = []
+    for name, size, mtime in files:
+        if now - mtime < settle_s:
+            continue
+        prev = state.get(name)
+        if prev is None or prev.get("size") != size or prev.get("mtime") != mtime:
+            planned.append(name)
+    return planned

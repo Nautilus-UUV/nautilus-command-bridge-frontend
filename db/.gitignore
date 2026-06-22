@@ -4,3 +4,10 @@ data/
 .venv/
 __pycache__/
 *.pyc
+
+# Cloud-mirror secrets -- never commit OAuth client secrets or user tokens
+# (the default token lives under data/, already ignored; these cover copies
+# kept elsewhere in the folder).
+*token*.json
+client_secret*.json
+credentials*.json

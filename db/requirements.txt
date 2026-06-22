@@ -1,2 +1,6 @@
 duckdb>=1.0
 paho-mqtt>=2.0
+# Cloud mirror (optional, only needed for `run.sh --cloud`).
+google-api-python-client>=2
+google-auth>=2
+google-auth-oauthlib>=1

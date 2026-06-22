@@ -34,6 +34,20 @@ Terminate the dive manually:
 mosquitto_pub -t nautilus/db/cmd/control -r -m '{"action":"terminate"}'
 ```
 
+## Cloud mirror (optional)
+
+
+One-time, mint an OAuth user token from your Google Cloud OAuth client (a Desktop app `client_secret.json`):
+```
+./run.sh --cloud-login --gdrive-client-secret <YOUR_SECRET>.json
+```
+
+Then launch the session with the mirror on, pointing at the destination Drive
+folder id (the token defaults to `data/gdrive_token.json`):
+```
+./run.sh --cloud --gdrive-folder <DRIVE_FOLDER_ID>
+```
+
 ## Verification
 
 The writer reports itself online with the open dive id:
@@ -167,3 +181,12 @@ Non-numeric telemetry leaves (a mission `state`, a `frame_id`) are dropped from
   them without the DB lock. This is the "investigate while it runs" path.
 - `data/parquet/dives.parquet` -- small snapshot of the dives table, refreshed
   each rotation, so dives are searchable by name without stopping the writer.
+
+### Cloud First Time (optional)
+
+1. Create a project on https://console.cloud.google.com
+2. **Enable the Google Drive API for that project** (APIs & Services -> Library -> "Google Drive API" -> Enable)
+3. **OAuth consent screen** -> User type External -> add your own Google account as a Test user
+4. **Credentials** -> Create credentials -> OAuth client ID -> Application type: Desktop app -> download the JSON -> save it as db/client_secret.json 
+5. **Google Drive**, pick the destination folder and copy its id from the URL: drive.google.com/drive/folders/<THIS_PART>.
+
