@@ -47,7 +47,10 @@ watch(
   [linkUp, armed],
   ([up, isArmed]) => {
     if (!up && isArmed && linkDownAt.value === null) {
-      linkDownAt.value = Date.now()
+      // Anchor to the last tick we heard (≈ the drop instant) rather than now,
+      // so the countdown tracks the glider's real dead-man clock instead of
+      // running optimistic by our ~3.5 s detection latency.
+      linkDownAt.value = mqtt.lastTickMs ?? Date.now()
       nowMs.value = Date.now()
       ticker = window.setInterval(() => {
         nowMs.value = Date.now()

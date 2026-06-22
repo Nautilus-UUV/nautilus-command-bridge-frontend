@@ -16,7 +16,7 @@
 // disconnect, and our bridge memory note pins this resubscribe pattern.
 
 import { defineStore } from 'pinia'
-import { ref, readonly } from 'vue'
+import { ref, readonly, computed } from 'vue'
 import mqtt, { type MqttClient } from 'mqtt'
 
 export type BridgeStatus = 'connecting' | 'online' | 'offline' | 'link_lost'
@@ -25,6 +25,17 @@ export type TelemetryHandler = (payload: unknown, topic: string) => void
 
 // Topic the bridge retains its liveness state on (mqtt_bridge_node.py).
 const STATUS_TOPIC = 'nautilus/status/bridge'
+
+// The bridge's app-level liveness beat (mqtt_bridge_node.py, every 2 s). We
+// watch its freshness so a tether drop shows here in ~3.5 s, instead of waiting
+// out the broker's keepalive timeout (~30-45 s) for the retained link_lost.
+const STATUS_TICK_TOPIC = 'nautilus/status/bridge/tick'
+
+// Treat the tick as silent past this and call the link lost locally. ~1.75
+// missed 2 s beats: aggressive but tolerant of a single dropped QoS-0 beat, and
+// non-latching -- it clears the instant a beat returns, so a flaky tether just
+// flickers rather than sticking.
+const TICK_STALE_MS = 3500
 
 // Command topics the UI publishes into (mqtt_bridge_node.py ingress).
 const CMD_COMMAND = 'nautilus/cmd/command'
@@ -43,7 +54,21 @@ const BROKER_URL = import.meta.env.VITE_MQTT_URL ?? 'ws://localhost:9001'
 
 export const useMqttBridgeStore = defineStore('mqttBridge', () => {
   const connected = ref(false)
-  const bridgeStatus = ref<BridgeStatus>('connecting')
+  // Raw link state from the broker: our own reconnects plus the retained
+  // nautilus/status/bridge value. bridgeStatus below folds tick-freshness in.
+  const rawBridgeStatus = ref<BridgeStatus>('connecting')
+  // When we last heard the bridge tick (seeded on going online; see below).
+  const lastTickMs = ref<number | null>(null)
+  const nowMs = ref(Date.now())
+
+  // Effective link health: an 'online' raw state is downgraded to 'link_lost'
+  // the moment the tick goes stale, so a tether drop surfaces in ~3.5 s. Every
+  // other raw state (connecting/offline/link_lost) passes through unchanged.
+  const bridgeStatus = computed<BridgeStatus>(() => {
+    if (rawBridgeStatus.value !== 'online') return rawBridgeStatus.value
+    if (lastTickMs.value === null) return 'link_lost'
+    return nowMs.value - lastTickMs.value > TICK_STALE_MS ? 'link_lost' : 'online'
+  })
 
   // Random suffix so two browser tabs don't fight over the same client id
   // (paho would disconnect one of them).
@@ -64,6 +89,9 @@ export const useMqttBridgeStore = defineStore('mqttBridge', () => {
     client.subscribe(STATUS_TOPIC, { qos: 1 }, (err) => {
       if (err) console.error('mqtt subscribe failed', STATUS_TOPIC, err)
     })
+    client.subscribe(STATUS_TICK_TOPIC, { qos: 0 }, (err) => {
+      if (err) console.error('mqtt subscribe failed', STATUS_TICK_TOPIC, err)
+    })
     for (const topic of handlers.keys()) {
       client.subscribe(topic, { qos: 0 }, (err) => {
         if (err) console.error('mqtt subscribe failed', topic, err)
@@ -77,7 +105,7 @@ export const useMqttBridgeStore = defineStore('mqttBridge', () => {
   })
 
   client.on('reconnect', () => {
-    bridgeStatus.value = 'connecting'
+    rawBridgeStatus.value = 'connecting'
   })
 
   client.on('close', () => {
@@ -100,11 +128,26 @@ export const useMqttBridgeStore = defineStore('mqttBridge', () => {
     if (connected.value) client.publish(CMD_HEARTBEAT, '{}', { qos: 0 })
   }, 1000)
 
+  // Drives the tick-freshness check in bridgeStatus; 1 Hz against a 2 s beat is
+  // plenty.
+  setInterval(() => {
+    nowMs.value = Date.now()
+  }, 1000)
+
   client.on('message', (topic, payload) => {
+    if (topic === STATUS_TICK_TOPIC) {
+      lastTickMs.value = Date.now()
+      return
+    }
     if (topic === STATUS_TOPIC) {
       const text = payload.toString().trim()
       if (text === 'online' || text === 'offline' || text === 'link_lost') {
-        bridgeStatus.value = text
+        rawBridgeStatus.value = text
+        // Seed the tick clock on going online so a healthy (re)connect doesn't
+        // flash link_lost before its first tick arrives. If the bridge is
+        // actually gone (we joined onto a stale-retained 'online'), no ticks
+        // follow and bridgeStatus flips to link_lost in ~3.5 s.
+        if (text === 'online') lastTickMs.value = Date.now()
       }
       return
     }
@@ -206,7 +249,8 @@ export const useMqttBridgeStore = defineStore('mqttBridge', () => {
 
   return {
     connected: readonly(connected),
-    bridgeStatus: readonly(bridgeStatus),
+    bridgeStatus,
+    lastTickMs: readonly(lastTickMs),
     publish,
     subscribe,
     stopMission,
