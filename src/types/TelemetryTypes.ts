@@ -46,8 +46,9 @@ export interface MissionActiveMsg {
   state: MissionState
   mission_id: number | null
   target_pressure_pa?: number
+  shallow_pressure_pa?: number
   angle_rad?: number
-  n_resurfaces?: number
+  n_oscillations?: number
 }
 
 // In-store sample. recordDatetime is ISO-8601; populated from
