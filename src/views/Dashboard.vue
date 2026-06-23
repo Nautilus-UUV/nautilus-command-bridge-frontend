@@ -21,7 +21,7 @@ import CommandProfilePanel from '@/components/CommandPanels/CommandProfilePanel.
 // dial (or any future metric) is one more object here + its accessor -- the
 // fluid flex-wrap container reflows on its own. Ranges are grounded in
 // robot_specs.py (BCU_MOTOR_MAX_RPM, ACU_PITCH_MAX_TRAVEL_M, ACU_ROLL_MAX_ANGLE).
-const { bcuRpm, bcuFeedbackRpm, acuPitch, acuRoll, bcuPressure, externalTemperature, imu, position } = storeToRefs(useTelemetryStore())
+const { bcuRpm, bcuFeedbackRpm, acuPitch, acuRoll, bcuPressure, internalPressure, externalTemperature, imu, position } = storeToRefs(useTelemetryStore())
 
 const latest = (s: { value: { value: number }[] }) => s.value[0]?.value ?? null
 
@@ -64,6 +64,16 @@ const gauges = computed(() => {
       value: tankRaw === null ? null : tankRaw / 1000, // Pa -> kPa for the dial
       min: 0, max: 200, signed: false, unit: 'kPa', decimals: 1,
       trend: trendOf(bcuPressure.value, { back: 5, eps: 100 }), // 100 Pa
+    },
+    {
+      // Internal hull pressure off the STM (absolute Pa) -- sits near
+      // atmospheric (~101 kPa), so it reads mid-scale on the same dial as
+      // Tank Press; a slow drift flags a leak or thermal load in the bay.
+      key: 'int-press',
+      label: 'INT PRESS',
+      value: latest(internalPressure) === null ? null : latest(internalPressure) / 1000, // Pa -> kPa
+      min: 0, max: 200, signed: false, unit: 'kPa', decimals: 1,
+      trend: trendOf(internalPressure.value, { back: 5, eps: 100 }), // 100 Pa
     },
     {
       key: 'pitch',

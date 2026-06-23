@@ -49,6 +49,7 @@ export const useTelemetryStore = defineStore('telemetry', () => {
   const imu = ref<Sample<ImuMsg>[]>([])
   const bcuPressure = ref<Sample<number>[]>([])
   const externalPressure = ref<Sample<number>[]>([])
+  const internalPressure = ref<Sample<number>[]>([])
   const externalTemperature = ref<Sample<number>[]>([])
   const bcuRpm = ref<Sample<number>[]>([])
   const bcuFeedbackRpm = ref<Sample<number>[]>([])
@@ -126,6 +127,7 @@ export const useTelemetryStore = defineStore('telemetry', () => {
   bindImu('nautilus/telemetry/imu', imu, CAP_CHARTED)
   bindScalar('nautilus/telemetry/bcu/pressure', bcuPressure, CAP_CHARTED)
   bindScalar('nautilus/telemetry/external/pressure', externalPressure, CAP_CHARTED)
+  bindScalar('nautilus/telemetry/internal/pressure', internalPressure, CAP_CHARTED)
   bindTemperature(
     'nautilus/telemetry/external/temperature',
     externalTemperature,
@@ -165,6 +167,7 @@ export const useTelemetryStore = defineStore('telemetry', () => {
     imu,
     bcuPressure,
     externalPressure,
+    internalPressure,
     externalTemperature,
     bcuRpm,
     bcuFeedbackRpm,
