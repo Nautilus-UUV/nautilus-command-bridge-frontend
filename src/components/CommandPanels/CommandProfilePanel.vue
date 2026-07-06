@@ -22,18 +22,20 @@ interface ProfileOption {
 
 const profileOptions: ProfileOption[] = [
   { value: 'trim',      title: 'Trim & Neutral', hint: 'Hold a depth, zero pitch/roll. Does not self-terminate.' },
-  { value: 'sawtooth',  title: 'Sawtooth',       hint: 'Glide down at -pitch, up at +pitch, for N cycles.' },
+  { value: 'sawtooth',  title: 'Sawtooth',       hint: 'Glide between a deep and shallow depth for N oscillations, then surface.' },
   { value: 'surface',   title: 'Surface',        hint: 'Ascend to gauge 0 Pa and hold. Self-terminates.' },
 ]
 
 // Source of truth is always Pa and rad -- the toggle below only changes
 // how the user enters and reads them. Defaults mirror the launch-file
-// canon (trim_sim:=75383 Pa ~ 7.5 m; sawtooth ~15 m at 35 deg).
+// canon (trim_sim:=75383 Pa ~ 7.5 m; sawtooth deep ~15 m at 35 deg,
+// shallow ~5 m). Shallow 0 climbs to the surface between dives.
 const selected = ref<MissionKey>('trim')
 const trimPressurePa     = ref(75383.0)
 const sawPressurePa      = ref(147150.0)
+const sawShallowPa       = ref(49050.0)  // ~5 m
 const sawAngleRad        = ref(0.6109)   // ~35 deg
-const sawNResurfaces     = ref(1)
+const sawNOscillations   = ref(2)
 
 const operatorUnits = ref(true)  // true = m + deg, false = Pa + rad
 
@@ -74,6 +76,15 @@ const sawPressureDisplay = computed({
   },
 })
 
+const sawShallowDisplay = computed({
+  get: () => operatorUnits.value
+    ? round(paToM(sawShallowPa.value), 2)
+    : round(sawShallowPa.value, 0),
+  set: (v: number) => {
+    sawShallowPa.value = operatorUnits.value ? mToPa(v) : v
+  },
+})
+
 const sawAngleDisplay = computed({
   get: () => operatorUnits.value
     ? round(radToDeg(sawAngleRad.value), 1)
@@ -96,8 +107,11 @@ const sendDisabled = computed(() =>
   !connected.value || bridgeStatus.value !== 'online'
 )
 
-function buildMissionCommand(): { mission_id: number; target_pressure_pa: number; angle_rad: number; n_resurfaces: number } {
-  const base = { mission_id: 0, target_pressure_pa: 0, angle_rad: 0, n_resurfaces: 0 }
+// Keys MUST match nautilus_msgs/MissionCommand exactly: the MQTT bridge
+// decodes via set_message_fields and drops the whole command on any unknown
+// field (no partial apply).
+function buildMissionCommand(): { mission_id: number; target_pressure_pa: number; shallow_pressure_pa: number; angle_rad: number; n_oscillations: number } {
+  const base = { mission_id: 0, target_pressure_pa: 0, shallow_pressure_pa: 0, angle_rad: 0, n_oscillations: 0 }
   switch (selected.value) {
     case 'trim':
       return { ...base, mission_id: MISSION_ID.trim, target_pressure_pa: trimPressurePa.value }
@@ -106,8 +120,9 @@ function buildMissionCommand(): { mission_id: number; target_pressure_pa: number
         ...base,
         mission_id: MISSION_ID.sawtooth,
         target_pressure_pa: sawPressurePa.value,
+        shallow_pressure_pa: sawShallowPa.value,
         angle_rad: sawAngleRad.value,
-        n_resurfaces: Math.max(0, Math.floor(sawNResurfaces.value)),
+        n_oscillations: Math.max(0, Math.floor(sawNOscillations.value)),
       }
     case 'surface':
       return { ...base, mission_id: MISSION_ID.surface }
@@ -173,16 +188,20 @@ function onStop() {
 
     <div v-else-if="selected === 'sawtooth'" class="field-grid">
       <label>
-        <span class="field-label">Target depth ({{ pressureUnitLabel }})</span>
+        <span class="field-label">Deep depth ({{ pressureUnitLabel }})</span>
         <input type="number" v-model.number="sawPressureDisplay" :step="operatorUnits ? 0.1 : 100" />
+      </label>
+      <label>
+        <span class="field-label">Shallow depth ({{ pressureUnitLabel }})</span>
+        <input type="number" v-model.number="sawShallowDisplay" :step="operatorUnits ? 0.1 : 100" />
       </label>
       <label>
         <span class="field-label">Pitch magnitude ({{ angleUnitLabel }})</span>
         <input type="number" v-model.number="sawAngleDisplay" :step="operatorUnits ? 1 : 0.01" />
       </label>
       <label>
-        <span class="field-label">Cycles</span>
-        <input type="number" v-model.number="sawNResurfaces" min="0" step="1" />
+        <span class="field-label">Oscillations</span>
+        <input type="number" v-model.number="sawNOscillations" min="0" step="1" />
       </label>
     </div>
 

@@ -10,6 +10,7 @@ import UUVViewer from '@/components/UUVViewer.vue'
 import EmergencySurfaceButton from '@/components/CommandPanels/EmergencySurfaceButton.vue'
 import LifeguardToggle from '@/components/CommandPanels/LifeguardToggle.vue'
 import DiveInitPanel from '@/components/CommandPanels/DiveInitPanel.vue'
+import DbWriterControl from '@/components/CommandPanels/DbWriterControl.vue'
 import DebugCommandsPanel from '@/components/CommandPanels/DebugCommandsPanel.vue'
 import ResetButton from '@/components/CommandPanels/ResetButton.vue'
 import SubsystemHealthPanel from '@/components/CommandPanels/SubsystemHealthPanel.vue'
@@ -20,7 +21,7 @@ import CommandProfilePanel from '@/components/CommandPanels/CommandProfilePanel.
 // dial (or any future metric) is one more object here + its accessor -- the
 // fluid flex-wrap container reflows on its own. Ranges are grounded in
 // robot_specs.py (BCU_MOTOR_MAX_RPM, ACU_PITCH_MAX_TRAVEL_M, ACU_ROLL_MAX_ANGLE).
-const { bcuRpm, acuPitch, acuRoll, bcuPressure, imu, position } = storeToRefs(useTelemetryStore())
+const { bcuRpm, bcuFeedbackRpm, acuPitch, acuRoll, bcuPressure, internalPressure, externalTemperature, imu, position } = storeToRefs(useTelemetryStore())
 
 const latest = (s: { value: { value: number }[] }) => s.value[0]?.value ?? null
 
@@ -45,10 +46,17 @@ const gauges = computed(() => {
   return [
     {
       key: 'rpm',
-      label: 'Pump RPM',
+      label: 'Commanded RPM',
       value: latest(bcuRpm),
       min: -4000, max: 4000, signed: true, unit: 'rpm', decimals: 0,
       trend: trendOf(bcuRpm.value, { back: 5, eps: 20 }),
+    },
+    {
+      key: 'feedback-rpm',
+      label: 'Feedback RPM',
+      value: latest(bcuFeedbackRpm),
+      min: -4000, max: 4000, signed: true, unit: 'rpm', decimals: 0,
+      trend: trendOf(bcuFeedbackRpm.value, { back: 5, eps: 20 }),
     },
     {
       key: 'tank',
@@ -56,6 +64,16 @@ const gauges = computed(() => {
       value: tankRaw === null ? null : tankRaw / 1000, // Pa -> kPa for the dial
       min: 0, max: 200, signed: false, unit: 'kPa', decimals: 1,
       trend: trendOf(bcuPressure.value, { back: 5, eps: 100 }), // 100 Pa
+    },
+    {
+      // Internal hull pressure off the STM (absolute Pa) -- sits near
+      // atmospheric (~101 kPa), so it reads mid-scale on the same dial as
+      // Tank Press; a slow drift flags a leak or thermal load in the bay.
+      key: 'int-press',
+      label: 'INT PRESS',
+      value: latest(internalPressure) === null ? null : latest(internalPressure) / 1000, // Pa -> kPa
+      min: 0, max: 200, signed: false, unit: 'kPa', decimals: 1,
+      trend: trendOf(internalPressure.value, { back: 5, eps: 100 }), // 100 Pa
     },
     {
       key: 'pitch',
@@ -70,6 +88,14 @@ const gauges = computed(() => {
       value: rollRaw === null ? null : rollRaw / 100, // wire is centidegrees
       min: -30, max: 30, signed: true, unit: 'deg', decimals: 1,
       trend: trendOf(acuRoll.value, { back: 5, eps: 10 }), // 10 cdeg = 0.1 deg
+    },
+    {
+      // Seawater temperature, already in °C off the bridge -- passes through.
+      key: 'ext-temp',
+      label: 'Ext Temp',
+      value: latest(externalTemperature),
+      min: 0, max: 30, signed: false, unit: '°C', decimals: 1,
+      trend: trendOf(externalTemperature.value, { back: 5, eps: 0.1 }), // 0.1 °C deadband
     },
   ]
 })
@@ -207,6 +233,8 @@ const accelGauges = computed(() => {
         <LifeguardToggle />
         <div class="init-sep" aria-hidden="true"></div>
         <DiveInitPanel />
+        <div class="init-sep" aria-hidden="true"></div>
+        <DbWriterControl />
       </div>
     </div>
 
@@ -268,6 +296,8 @@ const accelGauges = computed(() => {
   /* Inset from the column edges so the two groups sit a little further in,
      toward the model, rather than hard against the outer margins. */
   padding: 0 56px;
+  /* Nudge the two IMU groups down a touch, off the gauge row above them. */
+  margin-top: 12px;
 }
 /* Transparent: no card chrome, just the title + dials sitting on the page. */
 .data-box {
@@ -380,7 +410,7 @@ const accelGauges = computed(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 22px;
+  gap: 16px;
   padding: 0 16px;
   /* Sharp top-inward trapezoid (SpaceX-console bar). clip-path clips the CSS
      border away on the slanted edges, so the 1px outline is faked with two

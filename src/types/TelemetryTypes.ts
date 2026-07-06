@@ -17,20 +17,27 @@ export interface PoseMsg {
   orientation: Quat
 }
 
-// sensor_msgs/Imu -- /imu/filtered/{left,right}
+// sensor_msgs/Imu -- /imu/filtered. The bridge trims the wire frame to just
+// these two vectors (see mqtt_bridge_node._encode_imu_compact): orientation
+// and the covariance arrays are unfilled passthrough, and the 3D attitude model
+// runs off /position/estimation, not the IMU.
 export interface ImuMsg {
-  header: RosHeader
-  orientation: Quat
-  orientation_covariance: number[]
   angular_velocity: Vec3
-  angular_velocity_covariance: number[]
   linear_acceleration: Vec3
-  linear_acceleration_covariance: number[]
 }
 
 // std_msgs scalars -- BCU/external pressure (Int32), BCU rpm (Int16),
 // BCU flow rate (Float32), valves (UInt8), ACU pitch/roll (Int16).
 export interface ScalarMsg<T = number> { data: T }
+
+// sensor_msgs/Temperature -- /external/temperature (and /internal/temperature).
+// `temperature` is already in Celsius (stm_com applies STM_TEMPERATURE_LSB_C),
+// so the dial passes it through with no conversion.
+export interface TemperatureMsg {
+  header: RosHeader
+  temperature: number   // Celsius
+  variance: number
+}
 
 // Bridge-synthesised mirror of /path + /command. Not a ROS message --
 // constructed inside mqtt_bridge_node.py._publish_mission_active().
@@ -39,8 +46,9 @@ export interface MissionActiveMsg {
   state: MissionState
   mission_id: number | null
   target_pressure_pa?: number
+  shallow_pressure_pa?: number
   angle_rad?: number
-  n_resurfaces?: number
+  n_oscillations?: number
 }
 
 // In-store sample. recordDatetime is ISO-8601; populated from
@@ -59,9 +67,10 @@ export interface Sample<T> {
 // as a control-char string, not a number, so it can't be compared to 0 here.
 export type HealthState = 'online' | 'offline' | 'unknown'
 
-// The ten rows the Link & Subsystems panel renders. `tether` is frontend-only
+// The rows the Link & Subsystems panel renders. `tether` is frontend-only
 // (derived from the bridge link); the nine glider rows are DiagnosticStatus
-// names emitted by py_pkg.liveness.liveness_node.
+// names emitted by py_pkg.liveness.liveness_node; `database` is the local
+// DuckDB logger's liveness (off nautilus/db/status), independent of the tether.
 export type SubsystemId =
   | 'tether'
   | 'acu_pitch'
@@ -72,6 +81,7 @@ export type SubsystemId =
   | 'imu'
   | 'external_pressure'
   | 'tank_pressure'
+  | 'database'
 
 // diagnostic_msgs/DiagnosticStatus, trimmed to the fields the UI uses. `level`
 // is intentionally omitted -- see HealthState.
