@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import SimpleCardWrapper from '@/components/SimpleCardWrapper.vue'
 import { useMqttBridgeStore } from '@/store/mqttBridge'
 import { storeToRefs } from 'pinia'
+import type { MissionCommandMsg } from '@/types/TelemetryTypes'
 
 // Mission IDs come from py_pkg/path/missions/factory.py. Don't reorder
 // without updating that file too -- the bridge passes mission_id straight
@@ -22,20 +23,26 @@ interface ProfileOption {
 
 const profileOptions: ProfileOption[] = [
   { value: 'trim',      title: 'Trim & Neutral', hint: 'Hold a depth, zero pitch/roll. Does not self-terminate.' },
-  { value: 'sawtooth',  title: 'Sawtooth',       hint: 'Glide between a deep and shallow depth for N oscillations, then surface.' },
+  { value: 'sawtooth',  title: 'Sawtooth',       hint: 'Glide down to the target depth at -pitch, back to the surface at +pitch. Ends after N oscillations.' },
   { value: 'surface',   title: 'Surface',        hint: 'Ascend to gauge 0 Pa and hold. Self-terminates.' },
 ]
 
 // Source of truth is always Pa and rad -- the toggle below only changes
 // how the user enters and reads them. Defaults mirror the launch-file
-// canon (trim_sim:=75383 Pa ~ 7.5 m; sawtooth deep ~15 m at 35 deg,
-// shallow ~5 m). Shallow 0 climbs to the surface between dives.
+// canon (trim_sim:=75383 Pa ~ 7.5 m; sawtooth ~15 m at 35 deg).
+//
+// There is deliberately no shallow-depth field: SawtoothMission.reference()
+// hardcodes gauge 0 Pa on the ascend leg and counts a resurface once the
+// vehicle is inside SURFACE_THRESHOLD_PA (0.8 m), so the shallow extremum is
+// not an operator parameter. Don't re-add the input without adding the field
+// to nautilus_msgs/MissionCommand and to the mission itself first.
 const selected = ref<MissionKey>('trim')
 const trimPressurePa     = ref(75383.0)
 const sawPressurePa      = ref(147150.0)
-const sawShallowPa       = ref(49050.0)  // ~5 m
 const sawAngleRad        = ref(0.6109)   // ~35 deg
-const sawNOscillations   = ref(2)
+// Named for the msg field (n_resurfaces); shown to the operator as
+// "Oscillations", the launch-arg vocabulary. Same count either way.
+const sawNResurfaces     = ref(2)
 
 const operatorUnits = ref(true)  // true = m + deg, false = Pa + rad
 
@@ -76,15 +83,6 @@ const sawPressureDisplay = computed({
   },
 })
 
-const sawShallowDisplay = computed({
-  get: () => operatorUnits.value
-    ? round(paToM(sawShallowPa.value), 2)
-    : round(sawShallowPa.value, 0),
-  set: (v: number) => {
-    sawShallowPa.value = operatorUnits.value ? mToPa(v) : v
-  },
-})
-
 const sawAngleDisplay = computed({
   get: () => operatorUnits.value
     ? round(radToDeg(sawAngleRad.value), 1)
@@ -107,11 +105,17 @@ const sendDisabled = computed(() =>
   !connected.value || bridgeStatus.value !== 'online'
 )
 
-// Keys MUST match nautilus_msgs/MissionCommand exactly: the MQTT bridge
-// decodes via set_message_fields and drops the whole command on any unknown
-// field (no partial apply).
-function buildMissionCommand(): { mission_id: number; target_pressure_pa: number; shallow_pressure_pa: number; angle_rad: number; n_oscillations: number } {
-  const base = { mission_id: 0, target_pressure_pa: 0, shallow_pressure_pa: 0, angle_rad: 0, n_oscillations: 0 }
+// Keys MUST match nautilus_msgs/MissionCommand exactly -- the bridge drops the
+// whole command on any unknown field. The schema and the reasoning live on
+// MissionCommandMsg; keep this function returning that type so a future msg
+// change is a compile error here instead of a mission that never starts.
+function buildMissionCommand(): MissionCommandMsg {
+  const base: MissionCommandMsg = {
+    mission_id: 0,
+    target_pressure_pa: 0,
+    angle_rad: 0,
+    n_resurfaces: 0,
+  }
   switch (selected.value) {
     case 'trim':
       return { ...base, mission_id: MISSION_ID.trim, target_pressure_pa: trimPressurePa.value }
@@ -120,9 +124,8 @@ function buildMissionCommand(): { mission_id: number; target_pressure_pa: number
         ...base,
         mission_id: MISSION_ID.sawtooth,
         target_pressure_pa: sawPressurePa.value,
-        shallow_pressure_pa: sawShallowPa.value,
         angle_rad: sawAngleRad.value,
-        n_oscillations: Math.max(0, Math.floor(sawNOscillations.value)),
+        n_resurfaces: Math.max(0, Math.floor(sawNResurfaces.value)),
       }
     case 'surface':
       return { ...base, mission_id: MISSION_ID.surface }
@@ -188,20 +191,16 @@ function onStop() {
 
     <div v-else-if="selected === 'sawtooth'" class="field-grid">
       <label>
-        <span class="field-label">Deep depth ({{ pressureUnitLabel }})</span>
+        <span class="field-label">Target depth ({{ pressureUnitLabel }})</span>
         <input type="number" v-model.number="sawPressureDisplay" :step="operatorUnits ? 0.1 : 100" />
-      </label>
-      <label>
-        <span class="field-label">Shallow depth ({{ pressureUnitLabel }})</span>
-        <input type="number" v-model.number="sawShallowDisplay" :step="operatorUnits ? 0.1 : 100" />
       </label>
       <label>
         <span class="field-label">Pitch magnitude ({{ angleUnitLabel }})</span>
         <input type="number" v-model.number="sawAngleDisplay" :step="operatorUnits ? 1 : 0.01" />
       </label>
-      <label>
+      <label title="One oscillation = dive to the target depth and return to the surface. The mission ends on the Nth resurface.">
         <span class="field-label">Oscillations</span>
-        <input type="number" v-model.number="sawNOscillations" min="0" step="1" />
+        <input type="number" v-model.number="sawNResurfaces" min="0" step="1" />
       </label>
     </div>
 
