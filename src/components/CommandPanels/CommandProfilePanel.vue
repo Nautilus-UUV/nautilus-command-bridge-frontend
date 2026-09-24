@@ -23,22 +23,18 @@ interface ProfileOption {
 
 const profileOptions: ProfileOption[] = [
   { value: 'trim',      title: 'Trim & Neutral', hint: 'Hold a depth, zero pitch/roll. Does not self-terminate.' },
-  { value: 'sawtooth',  title: 'Sawtooth',       hint: 'Glide down to the target depth at -pitch, back to the surface at +pitch. Ends after N oscillations.' },
+  { value: 'sawtooth',  title: 'Sawtooth',       hint: 'Glide between the deep and shallow depths for N oscillations, then surface. Shallow 0 climbs all the way up between dives.' },
   { value: 'surface',   title: 'Surface',        hint: 'Ascend to gauge 0 Pa and hold. Self-terminates.' },
 ]
 
 // Source of truth is always Pa and rad -- the toggle below only changes
 // how the user enters and reads them. Defaults mirror the launch-file
-// canon (trim_sim:=75383 Pa ~ 7.5 m; sawtooth ~15 m at 35 deg).
-//
-// There is deliberately no shallow-depth field: SawtoothMission.reference()
-// hardcodes gauge 0 Pa on the ascend leg and counts a resurface once the
-// vehicle is inside SURFACE_THRESHOLD_PA (0.8 m), so the shallow extremum is
-// not an operator parameter. Don't re-add the input without adding the field
-// to nautilus_msgs/MissionCommand and to the mission itself first.
+// canon (trim_sim:=75383 Pa ~ 7.5 m; sawtooth deep ~15 m at 35 deg,
+// shallow ~5 m). Shallow 0 climbs to the surface between dives.
 const selected = ref<MissionKey>('trim')
 const trimPressurePa     = ref(75383.0)
 const sawPressurePa      = ref(147150.0)
+const sawShallowPa       = ref(49050.0)  // ~5 m
 const sawAngleRad        = ref(0.6109)   // ~35 deg
 // Named for the msg field (n_resurfaces); shown to the operator as
 // "Oscillations", the launch-arg vocabulary. Same count either way.
@@ -83,6 +79,15 @@ const sawPressureDisplay = computed({
   },
 })
 
+const sawShallowDisplay = computed({
+  get: () => operatorUnits.value
+    ? round(paToM(sawShallowPa.value), 2)
+    : round(sawShallowPa.value, 0),
+  set: (v: number) => {
+    sawShallowPa.value = operatorUnits.value ? mToPa(v) : v
+  },
+})
+
 const sawAngleDisplay = computed({
   get: () => operatorUnits.value
     ? round(radToDeg(sawAngleRad.value), 1)
@@ -113,6 +118,7 @@ function buildMissionCommand(): MissionCommandMsg {
   const base: MissionCommandMsg = {
     mission_id: 0,
     target_pressure_pa: 0,
+    shallow_pressure_pa: 0,
     angle_rad: 0,
     n_resurfaces: 0,
   }
@@ -124,6 +130,7 @@ function buildMissionCommand(): MissionCommandMsg {
         ...base,
         mission_id: MISSION_ID.sawtooth,
         target_pressure_pa: sawPressurePa.value,
+        shallow_pressure_pa: sawShallowPa.value,
         angle_rad: sawAngleRad.value,
         n_resurfaces: Math.max(0, Math.floor(sawNResurfaces.value)),
       }
@@ -191,8 +198,12 @@ function onStop() {
 
     <div v-else-if="selected === 'sawtooth'" class="field-grid">
       <label>
-        <span class="field-label">Target depth ({{ pressureUnitLabel }})</span>
+        <span class="field-label">Deep depth ({{ pressureUnitLabel }})</span>
         <input type="number" v-model.number="sawPressureDisplay" :step="operatorUnits ? 0.1 : 100" />
+      </label>
+      <label title="Turnaround depth on the way up. 0 climbs all the way to the surface between dives.">
+        <span class="field-label">Shallow depth ({{ pressureUnitLabel }})</span>
+        <input type="number" v-model.number="sawShallowDisplay" :step="operatorUnits ? 0.1 : 100" />
       </label>
       <label>
         <span class="field-label">Pitch magnitude ({{ angleUnitLabel }})</span>

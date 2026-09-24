@@ -60,6 +60,9 @@ export interface TemperatureMsg {
 export interface MissionCommandMsg {
   mission_id: number
   target_pressure_pa: number
+  // SAWTOOTH shallow extremum (gauge Pa). 0 => climb all the way to the
+  // surface between dives, which is the legacy profile.
+  shallow_pressure_pa: number
   angle_rad: number
   n_resurfaces: number
 }
@@ -68,11 +71,17 @@ export interface MissionCommandMsg {
 // constructed inside mqtt_bridge_node.py._publish_mission_active(), which
 // spreads the last MissionCommandMsg it forwarded over a `state` field. The
 // command fields are absent until a mission is loaded, hence optional.
-export type MissionState = 'IDLE' | 'LOADED' | 'RUNNING'
+//
+// COMPLETE is the mission finishing on its own; IDLE after RUNNING means the
+// operator stopped it. Both are terminal, and they are deliberately not the
+// same value -- the glider reports completion on its own ROS topic
+// (/mission/complete) rather than faking an operator stop.
+export type MissionState = 'IDLE' | 'LOADED' | 'RUNNING' | 'COMPLETE'
 export interface MissionActiveMsg {
   state: MissionState
   mission_id: number | null
   target_pressure_pa?: number
+  shallow_pressure_pa?: number
   angle_rad?: number
   n_resurfaces?: number
 }
