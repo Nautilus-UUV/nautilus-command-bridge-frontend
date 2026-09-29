@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import SimpleCardWrapper from '@/components/SimpleCardWrapper.vue'
 import { useMqttBridgeStore } from '@/store/mqttBridge'
 import { storeToRefs } from 'pinia'
+import type { MissionCommandMsg } from '@/types/TelemetryTypes'
 
 // Mission IDs come from py_pkg/path/missions/factory.py. Don't reorder
 // without updating that file too -- the bridge passes mission_id straight
@@ -21,8 +22,8 @@ interface ProfileOption {
 }
 
 const profileOptions: ProfileOption[] = [
-  { value: 'trim',      title: 'Trim & Neutral', hint: 'Hold a depth, zero pitch/roll. Does not self-terminate.' },
-  { value: 'sawtooth',  title: 'Sawtooth',       hint: 'Glide between a deep and shallow depth for N oscillations, then surface.' },
+  { value: 'trim',      title: 'Trim & Neutral', hint: 'Go to a depth, zero pitch/roll. Completes on arrival (within 0.5 m).' },
+  { value: 'sawtooth',  title: 'Sawtooth',       hint: 'Glide between the deep and shallow depths for N oscillations, then surface. Shallow 0 climbs all the way up between dives.' },
   { value: 'surface',   title: 'Surface',        hint: 'Ascend to gauge 0 Pa and hold. Self-terminates.' },
 ]
 
@@ -35,7 +36,9 @@ const trimPressurePa     = ref(75383.0)
 const sawPressurePa      = ref(147150.0)
 const sawShallowPa       = ref(49050.0)  // ~5 m
 const sawAngleRad        = ref(0.6109)   // ~35 deg
-const sawNOscillations   = ref(2)
+// Named for the msg field (n_resurfaces); shown to the operator as
+// "Oscillations", the launch-arg vocabulary. Same count either way.
+const sawNResurfaces     = ref(2)
 
 const operatorUnits = ref(true)  // true = m + deg, false = Pa + rad
 
@@ -107,11 +110,18 @@ const sendDisabled = computed(() =>
   !connected.value || bridgeStatus.value !== 'online'
 )
 
-// Keys MUST match nautilus_msgs/MissionCommand exactly: the MQTT bridge
-// decodes via set_message_fields and drops the whole command on any unknown
-// field (no partial apply).
-function buildMissionCommand(): { mission_id: number; target_pressure_pa: number; shallow_pressure_pa: number; angle_rad: number; n_oscillations: number } {
-  const base = { mission_id: 0, target_pressure_pa: 0, shallow_pressure_pa: 0, angle_rad: 0, n_oscillations: 0 }
+// Keys MUST match nautilus_msgs/MissionCommand exactly -- the bridge drops the
+// whole command on any unknown field. The schema and the reasoning live on
+// MissionCommandMsg; keep this function returning that type so a future msg
+// change is a compile error here instead of a mission that never starts.
+function buildMissionCommand(): MissionCommandMsg {
+  const base: MissionCommandMsg = {
+    mission_id: 0,
+    target_pressure_pa: 0,
+    shallow_pressure_pa: 0,
+    angle_rad: 0,
+    n_resurfaces: 0,
+  }
   switch (selected.value) {
     case 'trim':
       return { ...base, mission_id: MISSION_ID.trim, target_pressure_pa: trimPressurePa.value }
@@ -122,7 +132,7 @@ function buildMissionCommand(): { mission_id: number; target_pressure_pa: number
         target_pressure_pa: sawPressurePa.value,
         shallow_pressure_pa: sawShallowPa.value,
         angle_rad: sawAngleRad.value,
-        n_oscillations: Math.max(0, Math.floor(sawNOscillations.value)),
+        n_resurfaces: Math.max(0, Math.floor(sawNResurfaces.value)),
       }
     case 'surface':
       return { ...base, mission_id: MISSION_ID.surface }
@@ -191,7 +201,7 @@ function onStop() {
         <span class="field-label">Deep depth ({{ pressureUnitLabel }})</span>
         <input type="number" v-model.number="sawPressureDisplay" :step="operatorUnits ? 0.1 : 100" />
       </label>
-      <label>
+      <label title="Turnaround depth on the way up. 0 climbs all the way to the surface between dives.">
         <span class="field-label">Shallow depth ({{ pressureUnitLabel }})</span>
         <input type="number" v-model.number="sawShallowDisplay" :step="operatorUnits ? 0.1 : 100" />
       </label>
@@ -199,9 +209,9 @@ function onStop() {
         <span class="field-label">Pitch magnitude ({{ angleUnitLabel }})</span>
         <input type="number" v-model.number="sawAngleDisplay" :step="operatorUnits ? 1 : 0.01" />
       </label>
-      <label>
+      <label title="One oscillation = dive to the target depth and return to the surface. The mission ends on the Nth resurface.">
         <span class="field-label">Oscillations</span>
-        <input type="number" v-model.number="sawNOscillations" min="0" step="1" />
+        <input type="number" v-model.number="sawNResurfaces" min="0" step="1" />
       </label>
     </div>
 

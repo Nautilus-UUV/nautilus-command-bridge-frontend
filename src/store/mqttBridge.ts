@@ -18,6 +18,7 @@
 import { defineStore } from 'pinia'
 import { ref, readonly, computed } from 'vue'
 import mqtt, { type MqttClient } from 'mqtt'
+import type { MissionCommandMsg } from '@/types/TelemetryTypes'
 
 export type BridgeStatus = 'connecting' | 'online' | 'offline' | 'link_lost'
 
@@ -196,7 +197,11 @@ export const useMqttBridgeStore = defineStore('mqttBridge', () => {
   // fight the controllers once they drive), load the mission, then run it. The
   // leading /debug/reset also cancels an in-progress emergency surface -- an
   // accepted edge, since the emergency control is separate and prominent.
-  function startMission(cmd: object): void {
+  // `cmd` is typed rather than `object` on purpose: the bridge drops the whole
+  // /path command on any key that isn't a MissionCommand field, so this is the
+  // only compile-time check standing between a renamed field and a mission
+  // that silently never starts.
+  function startMission(cmd: MissionCommandMsg): void {
     publish(CMD_DEBUG_RESET, {})
     publish(CMD_PATH, cmd)
     publish(CMD_COMMAND, { data: true })
