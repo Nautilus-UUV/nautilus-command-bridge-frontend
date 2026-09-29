@@ -32,8 +32,9 @@ jobs:
         run: npm ci
 
       - name: Build
-        # vue-tsc 1.x is incompatible with Node 22; run vite build directly
-        run: npx vite build
+        # vue-tsc type-checks first, so a MissionCommandMsg key that drifts
+        # from the .msg fails the build instead of shipping.
+        run: npm run build
         env:
           GITHUB_ACTIONS: true
 

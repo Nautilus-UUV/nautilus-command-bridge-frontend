@@ -22,7 +22,7 @@ interface ProfileOption {
 }
 
 const profileOptions: ProfileOption[] = [
-  { value: 'trim',      title: 'Trim & Neutral', hint: 'Hold a depth, zero pitch/roll. Does not self-terminate.' },
+  { value: 'trim',      title: 'Trim & Neutral', hint: 'Go to a depth, zero pitch/roll. Completes on arrival (within 0.5 m).' },
   { value: 'sawtooth',  title: 'Sawtooth',       hint: 'Glide between the deep and shallow depths for N oscillations, then surface. Shallow 0 climbs all the way up between dives.' },
   { value: 'surface',   title: 'Surface',        hint: 'Ascend to gauge 0 Pa and hold. Self-terminates.' },
 ]

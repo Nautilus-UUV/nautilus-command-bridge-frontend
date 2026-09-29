@@ -50,8 +50,8 @@ export interface TemperatureMsg {
 // graph, pathfinding_node never loads a mission, and the following
 // /command=true starts nothing.
 //
-// Fields the msg carries but this omits (dwell_s, n_steps) default to zero
-// ROS-side -- for sawtooth that is the legacy no-dwell profile.
+// The one field the msg carries but this omits, n_steps, defaults to zero
+// ROS-side. Only STAIRCASE reads it, and the UI does not offer staircase.
 //
 // n_resurfaces is the msg field name. The launch args and this UI call the
 // same count "oscillations"; auto_mission.py does the identical rename when
